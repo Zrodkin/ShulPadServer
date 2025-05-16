@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
+import { logger } from "@/lib/logger"
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,11 +9,13 @@ export async function GET(request: NextRequest) {
     const organizationId = searchParams.get("organization_id")
     const state = searchParams.get("state")
 
+    logger.info("Status check requested", { organizationId, state })
+
     const db = createClient()
 
     // Path 1: Checking by state parameter (for OAuth flow tracking)
     if (state) {
-      console.log("Checking authorization status by state:", state)
+      logger.debug("Checking authorization status by state", { state })
 
       // Get pending tokens from temporary storage
       const pendingResult = await db.query(
@@ -21,22 +24,36 @@ export async function GET(request: NextRequest) {
       )
 
       if (pendingResult.rows.length > 0) {
-        // Successfully found pending authorization
-        const { access_token, refresh_token, merchant_id, expires_at } = pendingResult.rows[0]
+        const row = pendingResult.rows[0]
 
-        // Clean up the pending token
-        await db.query("DELETE FROM square_pending_tokens WHERE state = $1", [state])
+        // If we have tokens, return them
+        if (row.access_token) {
+          // Successfully found pending authorization with tokens
+          const { access_token, refresh_token, merchant_id, expires_at } = row
 
-        // Return the tokens
-        return NextResponse.json({
-          connected: true,
-          access_token,
-          refresh_token,
-          merchant_id,
-          expires_at,
-        })
+          // Clean up the pending token
+          await db.query("DELETE FROM square_pending_tokens WHERE state = $1", [state])
+          logger.info("Found and cleaned up pending authorization", { state, merchantId: merchant_id })
+
+          // Return the tokens
+          return NextResponse.json({
+            connected: true,
+            access_token,
+            refresh_token,
+            merchant_id,
+            expires_at,
+          })
+        } else {
+          // We found the state but no tokens yet
+          logger.debug("Found pending state but no tokens yet", { state })
+          return NextResponse.json({
+            connected: false,
+            message: "token_not_found",
+          })
+        }
       } else {
         // No pending authorization found
+        logger.debug("No pending authorization found for state", { state })
         return NextResponse.json({
           connected: false,
           message: "token_not_found",
@@ -44,8 +61,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Path 2: Checking by organization ID (your existing implementation)
+    // Path 2: Checking by organization ID
     else if (organizationId) {
+      logger.debug("Checking authorization status by organization ID", { organizationId })
+
       const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
       const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
@@ -56,6 +75,7 @@ export async function GET(request: NextRequest) {
       )
 
       if (result.rows.length === 0) {
+        logger.info("No Square connection found for organization", { organizationId })
         return NextResponse.json({
           connected: false,
           message: "No Square connection found",
@@ -67,6 +87,7 @@ export async function GET(request: NextRequest) {
       // Check if token is expired
       const expirationDate = new Date(expires_at)
       if (expirationDate < new Date()) {
+        logger.warn("Token expired", { organizationId, expires_at })
         return NextResponse.json({
           connected: false,
           message: "Token expired",
@@ -76,6 +97,7 @@ export async function GET(request: NextRequest) {
 
       // Verify token by making a simple API call
       try {
+        logger.debug("Verifying token with Square API", { organizationId })
         await axios.get(`https://connect.${SQUARE_DOMAIN}/v2/locations`, {
           headers: {
             Authorization: `Bearer ${access_token}`,
@@ -84,13 +106,14 @@ export async function GET(request: NextRequest) {
           },
         })
 
+        logger.info("Token verification successful", { organizationId })
         return NextResponse.json({
           connected: true,
           merchant_id,
           expires_at: expires_at,
         })
       } catch (apiError) {
-        console.error("API error checking token:", apiError)
+        logger.error("API error checking token", { error: apiError, organizationId })
         return NextResponse.json({
           connected: false,
           message: "Token validation failed",
@@ -98,10 +121,11 @@ export async function GET(request: NextRequest) {
         })
       }
     } else {
+      logger.warn("Missing required parameters")
       return NextResponse.json({ error: "Either organization_id or state parameter is required" }, { status: 400 })
     }
   } catch (error) {
-    console.error("Server error:", error)
+    logger.error("Server error", { error })
     return NextResponse.json({ error: "Server error checking connection status" }, { status: 500 })
   }
 }

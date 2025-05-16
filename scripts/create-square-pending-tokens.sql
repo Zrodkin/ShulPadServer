@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS square_pending_tokens (
   id SERIAL PRIMARY KEY,
   state VARCHAR(255) NOT NULL,
-  access_token TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  merchant_id VARCHAR(255) NOT NULL,
+  access_token TEXT,
+  refresh_token TEXT,
+  merchant_id VARCHAR(255),
   expires_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(state)

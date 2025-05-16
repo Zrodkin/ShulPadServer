@@ -1,152 +1,160 @@
-// /api/square/callback/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
+import { logger } from "@/lib/logger"
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get("code")
     const state = searchParams.get("state")
-    
-    // Log all parameters to help with debugging
-    console.log("Received callback with params:", Object.fromEntries(searchParams.entries()))
+    // Get organization_id from request or use a unique value based on merchant_id later
+    let organizationId = searchParams.get("organization_id") || "default"
+
+    logger.info("Received OAuth callback", { state, hasCode: !!code, hasOrgId: !!organizationId })
 
     if (!code) {
-      console.error("No authorization code received")
-      return NextResponse.json({ error: "Authorization code is missing" }, { status: 400 })
+      logger.error("Authorization code is missing")
+      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=missing_code`)
+    }
+
+    if (!state) {
+      logger.error("No state parameter received")
+      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=missing_state`)
+    }
+
+    // Validate that the state exists in our database
+    try {
+      const db = createClient()
+      const stateResult = await db.query("SELECT state FROM square_pending_tokens WHERE state = $1", [state])
+
+      if (stateResult.rows.length === 0) {
+        logger.error("Invalid state parameter received", { state })
+        // Redirect to error page instead of returning JSON
+        return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_state`)
+      }
+
+      logger.debug("State validation successful", { state })
+    } catch (dbError) {
+      logger.error("Database error during state validation", { error: dbError })
+      // Redirect to error page instead of returning JSON
+      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=database_error`)
     }
 
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
-    const REDIRECT_URI = process.env.REDIRECT_URI || "https://charity-pad-server.vercel.app/api/square/callback"
+    const REDIRECT_URI = process.env.REDIRECT_URI
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
 
-    if (!SQUARE_APP_ID || !SQUARE_APP_SECRET) {
-      console.error("Missing environment variables")
-      return NextResponse.json({ error: "Missing required environment variables" }, { status: 500 })
+    if (!SQUARE_APP_ID || !SQUARE_APP_SECRET || !REDIRECT_URI) {
+      logger.error("Missing required environment variables")
+      return NextResponse.redirect(
+        `${request.nextUrl.origin}/api/square/success?success=false&error=server_configuration`,
+      )
     }
 
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
     const SQUARE_TOKEN_URL = `https://connect.${SQUARE_DOMAIN}/oauth2/token`
 
-    console.log("Exchanging code for tokens...")
-    
+    logger.info("Exchanging authorization code for tokens")
+
     // Exchange the authorization code for access token
-    const response = await axios.post(
-      SQUARE_TOKEN_URL,
-      {
-        client_id: SQUARE_APP_ID,
-        client_secret: SQUARE_APP_SECRET,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: REDIRECT_URI,
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
+    let data
+    try {
+      const response = await axios.post(
+        SQUARE_TOKEN_URL,
+        {
+          client_id: SQUARE_APP_ID,
+          client_secret: SQUARE_APP_SECRET,
+          code,
+          grant_type: "authorization_code",
+          redirect_uri: REDIRECT_URI,
         },
-      },
-    )
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+        },
+      )
 
-    const data = response.data
+      data = response.data
+      logger.debug("Token exchange successful")
 
-    if (data.error) {
-      console.error("Token exchange error:", data)
-      return NextResponse.json({ error: data.error }, { status: 400 })
+      if (data.error) {
+        logger.error("Token exchange error", { error: data.error })
+        return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=token_exchange`)
+      }
+    } catch (error) {
+      logger.error("Error during token exchange", { error })
+      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=token_exchange`)
     }
 
-    console.log("Successfully obtained tokens for merchant:", data.merchant_id)
-
-    // Extract tokens and merchant info
     const { access_token, refresh_token, expires_at, merchant_id } = data
 
-    // Store tokens in database (optional - already implemented in your code)
-    try {
-      const db = createClient()
-      // Your existing code to store tokens...
-    } catch (dbError) {
-      console.error("Database error storing tokens:", dbError)
+    // If no organization_id was provided, create one based on merchant_id
+    if (!organizationId || organizationId === "default") {
+      organizationId = `org_${merchant_id}`
+      logger.info("Generated organization ID from merchant ID", { organizationId })
     }
 
-    // Prepare response data for status endpoint
-    // Store this information securely so status endpoint can access it
+    // Store tokens in both places using a transaction
     try {
-      // Create a temporary token storage with expiration
       const db = createClient()
-      await db.query(
-        `INSERT INTO square_pending_tokens (
-          state,
+
+      // Begin transaction
+      await db.query("BEGIN")
+
+      try {
+        // Store in temporary table for OAuth flow completion
+        await db.query(
+          `UPDATE square_pending_tokens SET
+          access_token = $2, 
+          refresh_token = $3, 
+          merchant_id = $4, 
+          expires_at = $5
+        WHERE state = $1`,
+          [state, access_token, refresh_token, merchant_id, expires_at],
+        )
+
+        // Store in permanent table for future use
+        await db.query(
+          `INSERT INTO square_connections (
+          organization_id, 
+          merchant_id, 
           access_token, 
           refresh_token, 
-          merchant_id,
-          expires_at,
+          expires_at, 
           created_at
-        ) VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [
-          state,
-          access_token,
-          refresh_token,
-          merchant_id,
-          expires_at
-        ]
-      )
-    } catch (storageError) {
-      console.error("Error storing pending tokens:", storageError)
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (organization_id) 
+        DO UPDATE SET 
+          merchant_id = $2,
+          access_token = $3,
+          refresh_token = $4,
+          expires_at = $5,
+          updated_at = NOW()`,
+          [organizationId, merchant_id, access_token, refresh_token, expires_at],
+        )
+
+        // Commit transaction
+        await db.query("COMMIT")
+        logger.info("Tokens stored successfully", { organizationId, merchantId: merchant_id })
+      } catch (error) {
+        // Rollback transaction on error
+        await db.query("ROLLBACK")
+        throw error
+      }
+    } catch (dbError) {
+      logger.error("Database error storing tokens", { error: dbError })
+      // Continue with the flow even if database storage fails
     }
 
-    // Return success page that will close the browser window
-    return new Response(`
-      <html>
-        <head>
-          <title>Connection Successful</title>
-          <script>
-            window.onload = function() {
-              // Display success message
-              document.getElementById('status').innerText = 'Successfully connected to Square!';
-              // Close the window automatically after a few seconds
-              setTimeout(function() {
-                window.close();
-              }, 3000);
-            }
-          </script>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              height: 100vh;
-              margin: 0;
-              text-align: center;
-            }
-            .container {
-              padding: 20px;
-              border-radius: 8px;
-              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-              max-width: 400px;
-            }
-            h1 {
-              color: #4CAF50;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>Square Connection</h1>
-            <p id="status">Completing connection...</p>
-            <p>You can close this window and return to the app.</p>
-          </div>
-        </body>
-      </html>
-    `, {
-      headers: {
-        "Content-Type": "text/html",
-      },
-    });
+    // Redirect to success page
+    logger.info("OAuth flow completed successfully", { organizationId, merchantId: merchant_id })
+    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=true`)
   } catch (error) {
-    console.error("Server error:", error)
-    return NextResponse.json({ error: "Server error during token exchange" }, { status: 500 })
+    logger.error("Server error during OAuth flow", { error })
+    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=server_error`)
   }
 }

@@ -1,15 +1,25 @@
 import { NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
+import { logger } from "@/lib/logger"
+
+// Define the type for refresh results
+interface RefreshResultDetail {
+  organization_id: string
+  status: string
+  error?: any
+  expires_at?: string
+}
 
 // This endpoint should be called by a cron job every day
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
 
     if (!SQUARE_APP_ID || !SQUARE_APP_SECRET) {
+      logger.error("Missing required environment variables")
       return NextResponse.json({ error: "Missing required environment variables" }, { status: 500 })
     }
 
@@ -25,15 +35,7 @@ export async function GET() {
        WHERE expires_at < NOW() + INTERVAL '7 days'`,
     )
 
-    console.log(`Found ${result.rows.length} tokens to refresh`)
-
-    // Define the type for the details array items
-    type RefreshResultDetail = {
-      organization_id: string
-      status: string
-      error?: any
-      expires_at?: string
-    }
+    logger.info(`Found ${result.rows.length} tokens to refresh`)
 
     const refreshResults = {
       success: 0,
@@ -45,6 +47,7 @@ export async function GET() {
     for (const row of result.rows) {
       try {
         const { organization_id, refresh_token } = row
+        logger.debug("Refreshing token", { organization_id })
 
         const response = await axios.post(
           SQUARE_TOKEN_URL,
@@ -65,7 +68,7 @@ export async function GET() {
         const data = response.data
 
         if (data.error) {
-          console.error(`Error refreshing token for ${organization_id}:`, data.error)
+          logger.error(`Error refreshing token for ${organization_id}:`, { error: data.error })
           refreshResults.failed++
           refreshResults.details.push({
             organization_id,
@@ -75,16 +78,26 @@ export async function GET() {
           continue
         }
 
-        // Update the tokens in the database
-        await db.query(
-          `UPDATE square_connections 
-           SET access_token = $1, 
-               refresh_token = $2, 
-               expires_at = $3, 
-               updated_at = NOW() 
-           WHERE organization_id = $4`,
-          [data.access_token, data.refresh_token, data.expires_at, organization_id],
-        )
+        // Update the tokens in the database using a transaction
+        await db.query("BEGIN")
+
+        try {
+          await db.query(
+            `UPDATE square_connections 
+             SET access_token = $1, 
+                 refresh_token = $2, 
+                 expires_at = $3, 
+                 updated_at = NOW() 
+             WHERE organization_id = $4`,
+            [data.access_token, data.refresh_token, data.expires_at, organization_id],
+          )
+
+          await db.query("COMMIT")
+          logger.info(`Successfully refreshed token for ${organization_id}`)
+        } catch (error) {
+          await db.query("ROLLBACK")
+          throw error
+        }
 
         refreshResults.success++
         refreshResults.details.push({
@@ -92,8 +105,8 @@ export async function GET() {
           status: "success",
           expires_at: data.expires_at,
         })
-      } catch (error) {
-        console.error("Error refreshing token:", error)
+      } catch (error: unknown) {
+        logger.error("Error refreshing token:", { error, organization_id: row.organization_id })
         refreshResults.failed++
         refreshResults.details.push({
           organization_id: row.organization_id,
@@ -104,8 +117,8 @@ export async function GET() {
     }
 
     return NextResponse.json(refreshResults)
-  } catch (error) {
-    console.error("Server error:", error)
+  } catch (error: unknown) {
+    logger.error("Server error:", { error })
     return NextResponse.json({ error: "Server error during token refresh" }, { status: 500 })
   }
 }
