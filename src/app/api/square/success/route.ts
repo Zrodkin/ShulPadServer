@@ -1,3 +1,4 @@
+// src/app/api/square/success/route.ts
 import { NextResponse, type NextRequest } from "next/server"
 import { logger } from "@/lib/logger"
 
@@ -8,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   logger.info("Success page accessed", { success, error })
 
-  // Generate HTML that attempts to close immediately
+  // Generate HTML that communicates back to the app using URL scheme
   const html = `
     <!DOCTYPE html>
     <html lang="en">
@@ -58,65 +59,48 @@ export async function GET(request: NextRequest) {
           border-radius: 4px;
         }
       </style>
-      ${success ? `
       <script>
-        // Try multiple methods to close the window immediately
-        function attemptClose() {
+        // Function to handle redirection and closing
+        function redirectToApp() {
+          // First, try to use the custom URL scheme to signal the app
           try {
-            window.close();
+            // Using charitypad:// scheme to signal completion to the app
+            // The path "oauth-complete" will be caught by the app
+            window.location.href = "charitypad://oauth-complete?success=${success}${error ? '&error=' + encodeURIComponent(error) : ''}";
+            
+            // If we're still here after 300ms, try window.close
             setTimeout(function() {
-              // If we're still here after 100ms, try again with different methods
-              try { window.open('', '_self').close(); } catch(e) {}
-              try { window.parent.close(); } catch(e) {}
-            }, 100);
-          } catch(e) {}
+              try { 
+                window.close(); 
+              } catch(e) {}
+            }, 300);
+          } catch(e) {
+            // Fallback if redirection fails
+            console.error("Error redirecting to app:", e);
+          }
         }
         
-        // Try to close immediately
-        attemptClose();
-        
-        // Try again after a tiny delay (browsers sometimes need this)
-        setTimeout(attemptClose, 50);
-        
-        // And again after another tiny delay
-        setTimeout(attemptClose, 100);
-        
-        // Setup click handler on document to help with closing
+        // Try to redirect as soon as page loads
         document.addEventListener('DOMContentLoaded', function() {
-          document.body.addEventListener('click', attemptClose);
-          // Auto-click to trigger user interaction
-          setTimeout(function() {
-            try {
-              document.body.click();
-            } catch(e) {}
-          }, 150);
+          // Show message briefly before attempting redirect
+          setTimeout(redirectToApp, 500);
+          
+          // Also attach to button click and body click
+          document.body.addEventListener('click', redirectToApp);
+          if (document.getElementById('closeButton')) {
+            document.getElementById('closeButton').addEventListener('click', redirectToApp);
+          }
         });
       </script>
-      ` : ''}
     </head>
     <body>
-      ${success ? `
-        <!-- Hidden success message, as we're trying to close instantly -->
-        <div class="card" style="display: none;">
-          <h1>Authorization Successful</h1>
-          <p>Your account has been connected successfully.</p>
-          <button onclick="window.close()">Close Window</button>
-          <p class="close-msg">Please close this window if it doesn't close automatically.</p>
-        </div>
-        <script>
-          // Show the card after a delay only if auto-close failed
-          setTimeout(function() {
-            document.querySelector('.card').style.display = 'block';
-          }, 300);
-        </script>
-      ` : `
-        <div class="card">
-          <h1>Authorization Failed</h1>
-          <p>There was a problem connecting your account. Please try again.</p>
-          ${error ? `<p class="close-msg">Error: ${error}</p>` : ''}
-          <button onclick="window.close()">Close Window</button>
-        </div>
-      `}
+      <div class="card">
+        <h1>${success ? "Authorization Successful" : "Authorization Failed"}</h1>
+        <p>${success ? "Your account has been connected successfully." : "There was a problem connecting your account."}</p>
+        ${error ? `<p class="close-msg">Error: ${error}</p>` : ''}
+        <button id="closeButton">Return to App</button>
+        <p class="close-msg">Click the button above to return to the app.</p>
+      </div>
     </body>
     </html>
   `
