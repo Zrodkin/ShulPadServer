@@ -31,10 +31,10 @@ export async function GET(request: NextRequest) {
           // Successfully found pending authorization with tokens
           const { access_token, refresh_token, merchant_id, expires_at } = row
 
-          // Clean up the pending token
-          await db.query("DELETE FROM square_pending_tokens WHERE state = $1", [state])
-          logger.info("Found and cleaned up pending authorization", { state, merchantId: merchant_id })
-
+         // Mark as obtained instead of deleting immediately
+    await db.query("UPDATE square_pending_tokens SET obtained = true WHERE state = $1", [state]);
+    logger.info("Found pending authorization", { state, merchantId: merchant_id });
+    
           // Return the tokens
           return NextResponse.json({
             connected: true,
