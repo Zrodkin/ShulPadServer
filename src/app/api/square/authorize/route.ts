@@ -26,16 +26,38 @@ export async function GET(request: Request) {
     // Store the state in the database BEFORE returning it to the client
     try {
       const db = createClient()
+      // Explicitly provide NULL values for all columns that might have NOT NULL constraints
       await db.query(
-        `INSERT INTO square_pending_tokens (state, created_at) 
-       VALUES ($1, NOW())
-       ON CONFLICT (state) DO NOTHING`,
-        [state],
+        `INSERT INTO square_pending_tokens (
+          state, 
+          access_token, 
+          refresh_token, 
+          merchant_id, 
+          expires_at, 
+          created_at
+        ) VALUES (
+          $1, 
+          NULL, 
+          NULL, 
+          NULL, 
+          NULL, 
+          NOW()
+        ) ON CONFLICT (state) DO NOTHING`,
+        [state]
       )
       logger.info("Stored pending token state", { state })
     } catch (dbError) {
       logger.error("Database error storing state", { error: dbError })
       // Continue even if storage fails
+      
+      // Add more detailed error logging to help diagnose the issue
+      if (dbError instanceof Error) {
+        logger.error("Database error details", {
+          message: dbError.message,
+          stack: dbError.stack,
+          name: dbError.name
+        })
+      }
     }
 
     const authUrl =
