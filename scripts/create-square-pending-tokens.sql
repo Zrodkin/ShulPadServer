@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS square_pending_tokens (
   access_token TEXT NULL, -- Explicitly set to NULL
   refresh_token TEXT NULL, -- Explicitly set to NULL
   merchant_id VARCHAR(255) NULL, -- Explicitly set to NULL
+  location_id VARCHAR(255) NULL, -- Added location_id field
   expires_at TIMESTAMP NULL, -- Explicitly set to NULL
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(state)

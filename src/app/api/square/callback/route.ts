@@ -92,6 +92,47 @@ export async function GET(request: NextRequest) {
 
     const { access_token, refresh_token, expires_at, merchant_id } = data
 
+    // Get the merchant's locations to find a location ID
+let location_id = null
+try {
+  logger.info("Fetching merchant locations")
+  const locationsResponse = await axios.get(`https://connect.${SQUARE_DOMAIN}/v2/locations`, {
+    headers: {
+      Authorization: `Bearer ${access_token}`,
+      "Content-Type": "application/json",
+      "Square-Version": "2023-09-25",
+    },
+  })
+
+  const locations = locationsResponse.data.locations
+  logger.debug("Found locations", { count: locations.length })
+
+  // Define an interface for the location object
+  interface SquareLocation {
+    id: string;
+    name: string;
+    status: string;
+    [key: string]: any; // For other properties we don't explicitly use
+  }
+
+  // Get the first active location or the first location if none are active
+  // Use proper typing for the location parameter
+  const primaryLocation = locations.find((loc: SquareLocation) => loc.status === "ACTIVE") || locations[0]
+
+  if (primaryLocation) {
+    location_id = primaryLocation.id
+    logger.info("Selected primary location", { location_id, location_name: primaryLocation.name })
+  } else {
+    logger.warn("No locations found for merchant")
+    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=no_locations`)
+  }
+} catch (error) {
+  logger.error("Error fetching merchant locations", { error })
+  // Continue with flow but log the error - we'll use the merchant_id as a fallback
+  location_id = merchant_id
+  logger.warn("Using merchant_id as fallback for location_id", { merchant_id })
+}
+
     // If no organization_id was provided, create one based on merchant_id
     if (!organizationId || organizationId === "default") {
       organizationId = `org_${merchant_id}`
@@ -111,35 +152,38 @@ export async function GET(request: NextRequest) {
           `UPDATE square_pending_tokens SET
           access_token = $2, 
           refresh_token = $3, 
-          merchant_id = $4, 
-          expires_at = $5
+          merchant_id = $4,
+          location_id = $5,
+          expires_at = $6
         WHERE state = $1`,
-          [state, access_token, refresh_token, merchant_id, expires_at],
+          [state, access_token, refresh_token, merchant_id, location_id, expires_at],
         )
 
         // Store in permanent table for future use
         await db.query(
           `INSERT INTO square_connections (
           organization_id, 
-          merchant_id, 
+          merchant_id,
+          location_id,
           access_token, 
           refresh_token, 
           expires_at, 
           created_at
-        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (organization_id) 
         DO UPDATE SET 
           merchant_id = $2,
-          access_token = $3,
-          refresh_token = $4,
-          expires_at = $5,
+          location_id = $3,
+          access_token = $4,
+          refresh_token = $5,
+          expires_at = $6,
           updated_at = NOW()`,
-          [organizationId, merchant_id, access_token, refresh_token, expires_at],
+          [organizationId, merchant_id, location_id, access_token, refresh_token, expires_at],
         )
 
         // Commit transaction
         await db.query("COMMIT")
-        logger.info("Tokens stored successfully", { organizationId, merchantId: merchant_id })
+        logger.info("Tokens stored successfully", { organizationId, merchantId: merchant_id, locationId: location_id })
       } catch (error) {
         // Rollback transaction on error
         await db.query("ROLLBACK")

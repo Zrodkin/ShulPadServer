@@ -71,6 +71,7 @@ async function initializeDatabase() {
         id SERIAL PRIMARY KEY,
         organization_id VARCHAR(255) NOT NULL UNIQUE,
         merchant_id VARCHAR(255) NOT NULL,
+        location_id VARCHAR(255) NOT NULL,
         access_token TEXT NOT NULL,
         refresh_token TEXT NOT NULL,
         expires_at TIMESTAMP NOT NULL,

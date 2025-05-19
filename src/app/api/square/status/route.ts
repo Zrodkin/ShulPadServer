@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
       // Get pending tokens from temporary storage
       const pendingResult = await db.query(
-        "SELECT access_token, refresh_token, merchant_id, expires_at FROM square_pending_tokens WHERE state = $1",
+        "SELECT access_token, refresh_token, merchant_id, location_id, expires_at FROM square_pending_tokens WHERE state = $1",
         [state],
       )
 
@@ -29,11 +29,11 @@ export async function GET(request: NextRequest) {
         // If we have tokens, return them
         if (row.access_token) {
           // Successfully found pending authorization with tokens
-          const { access_token, refresh_token, merchant_id, expires_at } = row
+          const { access_token, refresh_token, merchant_id, location_id, expires_at } = row
 
          // Mark as obtained instead of deleting immediately
-    await db.query("UPDATE square_pending_tokens SET obtained = true WHERE state = $1", [state]);
-    logger.info("Found pending authorization", { state, merchantId: merchant_id });
+          await db.query("UPDATE square_pending_tokens SET obtained = true WHERE state = $1", [state]);
+          logger.info("Found pending authorization", { state, merchantId: merchant_id, locationId: location_id });
     
           // Return the tokens
           return NextResponse.json({
@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
             access_token,
             refresh_token,
             merchant_id,
+            location_id,
             expires_at,
           })
         } else {
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
 
       // Get the access token from the database
       const result = await db.query(
-        "SELECT access_token, refresh_token, expires_at, merchant_id FROM square_connections WHERE organization_id = $1",
+        "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id = $1",
         [organizationId],
       )
 
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
         })
       }
 
-      const { access_token, refresh_token, expires_at, merchant_id } = result.rows[0]
+      const { access_token, refresh_token, expires_at, merchant_id, location_id } = result.rows[0]
 
       // Check if token is expired
       const expirationDate = new Date(expires_at)
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           connected: true,
           merchant_id,
+          location_id,
           expires_at: expires_at,
         })
       } catch (apiError) {

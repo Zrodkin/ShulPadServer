@@ -83,14 +83,14 @@ export async function GET(request: Request) {
 
         try {
           await db.query(
-            `UPDATE square_connections 
-             SET access_token = $1, 
-                 refresh_token = $2, 
-                 expires_at = $3, 
-                 updated_at = NOW() 
-             WHERE organization_id = $4`,
-            [data.access_token, data.refresh_token, data.expires_at, organization_id],
-          )
+  `UPDATE square_connections 
+   SET access_token = $1, 
+       refresh_token = $2, 
+       expires_at = $3, 
+       updated_at = NOW() 
+   WHERE organization_id = $4`,
+  [data.access_token, data.refresh_token, data.expires_at, organization_id],
+)
 
           await db.query("COMMIT")
           logger.info(`Successfully refreshed token for ${organization_id}`)
