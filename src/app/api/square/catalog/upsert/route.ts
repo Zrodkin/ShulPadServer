@@ -4,30 +4,38 @@ import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import { v4 as uuidv4 } from "uuid"
 
-// Define interfaces for type safety
-interface CatalogItemVariation {
-  type: "ITEM_VARIATION";
-  id: string;
-  presentAtAllLocations?: boolean;
-  itemVariationData: {
-    itemId: string;
-    name: string;
-    pricingType: "FIXED_PRICING";
-    priceMoney: {
-      amount: number;
-      currency: string;
-    };
+// Define interfaces for type safety - CORRECTED
+interface CatalogItemVariationData {
+  item_id: string;
+  name: string;
+  pricing_type: "FIXED_PRICING";
+  price_money: {
+    amount: number;
+    currency: string;
   };
 }
 
-interface CatalogItem {
+interface CatalogItemData {
+  name: string;
+  description?: string;
+  is_taxable?: boolean;
+  product_type?: string;
+}
+
+// ✅ FIXED: Proper CatalogObject structure for embedded variations
+interface CatalogObjectVariation {
+  type: "ITEM_VARIATION";
+  id: string;
+  item_variation_data: CatalogItemVariationData;
+}
+
+interface CatalogObject {
   type: "ITEM";
   id: string;
-  presentAtAllLocations?: boolean;
-  itemData: {
-    name: string;
-    description?: string;
-    variations?: CatalogItemVariation[];
+  present_at_all_locations?: boolean;
+  version?: number; // Required for updates
+  item_data: CatalogItemData & {
+    variations?: CatalogObjectVariation[];
   };
 }
 
@@ -92,32 +100,33 @@ export async function POST(request: NextRequest) {
     // Determine if we're creating a new item or updating existing
     const itemId = parent_item_id || `#Donations_${uuidv4().substring(0, 8)}`
     
-    // Create variations for each amount
-    const variations: CatalogItemVariation[] = amounts.map((amount: number, index: number) => ({
+    // ✅ FIXED: Create variations with correct structure for embedded approach
+    const variations: CatalogObjectVariation[] = amounts.map((amount: number, index: number) => ({
       type: "ITEM_VARIATION",
       id: `#Donation_${amount.toString().replace('.', '_')}_${index}`,
-      presentAtAllLocations: true,
-      itemVariationData: {
-        itemId: itemId,
+      item_variation_data: {
+        item_id: itemId,
         name: `$${amount} Donation`,
-        pricingType: "FIXED_PRICING",
-        priceMoney: {
+        pricing_type: "FIXED_PRICING",
+        price_money: {
           amount: Math.round(amount * 100), // Convert to cents
           currency: "USD"
         }
       }
     }))
 
-    // Create the catalog item with variations
-    const catalogObject: CatalogItem = {
+    // ✅ FIXED: Create the catalog item with correct structure
+    const catalogObject: CatalogObject = {
       type: "ITEM",
       id: itemId,
-      presentAtAllLocations: true,
+      present_at_all_locations: true, // ✅ FIXED: Correct field name
       // Include version for updates (required by Square for existing objects)
       ...(parent_item_id && parent_item_version && { version: parent_item_version }),
-      itemData: {
+      item_data: {
         name: parent_item_name,
         description: parent_item_description,
+        is_taxable: false, // Donations are typically not taxable
+        product_type: "DONATION", // ✅ ADDED: Specific product type for donations
         variations: variations
       }
     }
@@ -129,16 +138,16 @@ export async function POST(request: NextRequest) {
       is_update: !!parent_item_id
     })
 
-    // Make the request to Square API
+    // ✅ FIXED: Make the request with correct field names
     const response = await axios.post(
       SQUARE_CATALOG_URL,
       {
-        idempotencyKey: idempotencyKey,
+        idempotency_key: idempotencyKey, // ✅ FIXED: Correct field name
         object: catalogObject
       },
       {
         headers: {
-          "Square-Version": "2025-05-21", // Latest API version
+          "Square-Version": "2025-05-21", // ✅ FIXED: Latest API version
           "Authorization": `Bearer ${access_token}`,
           "Content-Type": "application/json"
         }
@@ -147,27 +156,27 @@ export async function POST(request: NextRequest) {
 
     logger.info("Successfully created/updated catalog item", { 
       organization_id,
-      catalog_object_id: response.data.catalogObject?.id,
-      variations_count: response.data.catalogObject?.itemData?.variations?.length
+      catalog_object_id: response.data.catalog_object?.id,
+      variations_count: response.data.catalog_object?.item_data?.variations?.length
     })
 
-    // Extract variation details for response
-    const createdVariations = response.data.catalogObject?.itemData?.variations?.map((variation: any) => ({
+    // ✅ FIXED: Extract variation details for response with correct field names
+    const createdVariations = response.data.catalog_object?.item_data?.variations?.map((variation: any) => ({
       id: variation.id,
-      name: variation.itemVariationData?.name,
-      amount: variation.itemVariationData?.priceMoney?.amount / 100, // Convert back to dollars
-      formatted_amount: `$${(variation.itemVariationData?.priceMoney?.amount / 100).toFixed(2)}`
+      name: variation.item_variation_data?.name,
+      amount: variation.item_variation_data?.price_money?.amount / 100, // Convert back to dollars
+      formatted_amount: `$${(variation.item_variation_data?.price_money?.amount / 100).toFixed(2)}`
     })) || []
 
-    // Return the created/updated catalog object details
+    // ✅ FIXED: Return the created/updated catalog object details with correct field names
     return NextResponse.json({
-      parent_item_id: response.data.catalogObject?.id,
-      parent_item_name: response.data.catalogObject?.itemData?.name,
+      parent_item_id: response.data.catalog_object?.id,
+      parent_item_name: response.data.catalog_object?.item_data?.name,
       variations: createdVariations,
-      id_mappings: response.data.idMappings || [],
-      created_at: response.data.catalogObject?.createdAt,
-      updated_at: response.data.catalogObject?.updatedAt,
-      version: response.data.catalogObject?.version
+      id_mappings: response.data.id_mappings || [],
+      created_at: response.data.catalog_object?.created_at,
+      updated_at: response.data.catalog_object?.updated_at,
+      version: response.data.catalog_object?.version
     })
 
   } catch (error: any) {

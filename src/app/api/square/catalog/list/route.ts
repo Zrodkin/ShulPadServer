@@ -3,11 +3,11 @@ import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 
-// Define interfaces for type safety
+// Define interfaces for type safety - CORRECTED
 interface CatalogItemVariationData {
-  itemId: string;
+  item_id: string;
   name: string;
-  priceMoney?: {
+  price_money?: {
     amount: number;
     currency: string;
   };
@@ -17,24 +17,24 @@ interface CatalogItemVariationData {
 interface CatalogItemData {
   name: string;
   description?: string;
-  variations?: CatalogItem[];
+  product_type?: string;
 }
 
-interface CatalogItem {
+interface CatalogObject {
   id: string;
   type: string;
-  itemData?: CatalogItemData;
-  itemVariationData?: CatalogItemVariationData;
-  updatedAt?: string;
+  item_data?: CatalogItemData;
+  item_variation_data?: CatalogItemVariationData;
+  updated_at?: string;
   version?: number;
 }
 
 interface ProcessedItem {
   id: string;
-  parentId: string;
+  parent_id: string;
   name: string;
   amount: number;
-  formattedAmount: string;
+  formatted_amount: string;
   type: string;
   ordinal?: number;
 }
@@ -76,17 +76,17 @@ export async function GET(request: NextRequest) {
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
     
-    let donationItems: CatalogItem[] = []
+    let donationItems: CatalogObject[] = []
     let nextCursor: string | undefined = undefined
     
     if (item_id) {
-      // Retrieve specific item with its variations
+      // ✅ FIXED: Retrieve specific item with its variations
       try {
         const catalogResponse = await axios.get(
           `https://connect.${SQUARE_DOMAIN}/v2/catalog/object/${item_id}?include_related_objects=true`,
           {
             headers: {
-              "Square-Version": "2025-05-21", // Latest API version
+              "Square-Version": "2025-05-21", // ✅ FIXED: Latest API version
               "Authorization": `Bearer ${access_token}`,
               "Content-Type": "application/json"
             }
@@ -96,8 +96,8 @@ export async function GET(request: NextRequest) {
         donationItems = [catalogResponse.data.object]
         
         // Include related objects (variations)
-        if (catalogResponse.data.relatedObjects) {
-          donationItems = [...donationItems, ...catalogResponse.data.relatedObjects]
+        if (catalogResponse.data.related_objects) {
+          donationItems = [...donationItems, ...catalogResponse.data.related_objects]
         }
       } catch (fetchError) {
         logger.error("Error fetching specific catalog item", { error: fetchError, item_id })
@@ -106,54 +106,58 @@ export async function GET(request: NextRequest) {
         }, { status: 404 })
       }
     } else {
-      // Search for donation-related items
+      // ✅ IMPROVED: Better search strategy for donation-related items
       try {
-        // Strategy 1: Search for exact "Donations" item first
-        const exactSearchResponse = await axios.post(
-          `https://connect.${SQUARE_DOMAIN}/v2/catalog/search`,
-          {
-            objectTypes: ["ITEM"],
-            query: {
-              exactQuery: {
-                attributeName: "name",
-                attributeValue: "Donations"
-              }
-            },
-            includeRelatedObjects: true,
-            ...(cursor && { cursor }),
-            ...(include_inactive && { includeDeletedObjects: true })
-          },
+        // Strategy 1: Use ListCatalog to get all items, then filter for donations
+        const listResponse = await axios.get(
+          `https://connect.${SQUARE_DOMAIN}/v2/catalog/list?types=ITEM,ITEM_VARIATION${cursor ? `&cursor=${cursor}` : ''}`,
           {
             headers: {
-              "Square-Version": "2025-05-21", // Latest API version
+              "Square-Version": "2025-05-21", // ✅ FIXED: Latest API version
               "Authorization": `Bearer ${access_token}`,
               "Content-Type": "application/json"
             }
           }
         )
         
-        if (exactSearchResponse.data.objects && exactSearchResponse.data.objects.length > 0) {
-          donationItems = exactSearchResponse.data.objects
-          nextCursor = exactSearchResponse.data.cursor
-          
-          // Include related objects (variations)
-          if (exactSearchResponse.data.relatedObjects) {
-            donationItems = [...donationItems, ...exactSearchResponse.data.relatedObjects]
+        const allItems = listResponse.data.objects || []
+        nextCursor = listResponse.data.cursor
+        
+        // Filter for donation-related items
+        donationItems = allItems.filter((item: CatalogObject) => {
+          if (item.type === "ITEM") {
+            const itemName = item.item_data?.name?.toLowerCase() || ""
+            const itemDesc = item.item_data?.description?.toLowerCase() || ""
+            const productType = item.item_data?.product_type || ""
+            
+            // Check if this is a donation item
+            return itemName.includes("donation") || 
+                   itemDesc.includes("donation") ||
+                   itemName.includes("charity") ||
+                   productType === "DONATION" ||
+                   itemName === "Donations" // Exact match for our parent item
           }
-        } else {
-          // Strategy 2: Fallback to text search for donation-related items
-          const textSearchResponse = await axios.post(
+          
+          // Include all variations for potential filtering
+          return item.type === "ITEM_VARIATION"
+        })
+        
+        // If no donation items found via list, try search as fallback
+        if (donationItems.filter(item => item.type === "ITEM").length === 0) {
+          logger.info("No donation items found via list, trying search fallback")
+          
+          const searchResponse = await axios.post(
             `https://connect.${SQUARE_DOMAIN}/v2/catalog/search`,
             {
-              objectTypes: ["ITEM"],
+              object_types: ["ITEM"],
               query: {
-                textQuery: {
+                text_query: {
                   keywords: ["donation", "donate", "charity"]
                 }
               },
-              includeRelatedObjects: true,
+              include_related_objects: true,
               ...(cursor && { cursor }),
-              ...(include_inactive && { includeDeletedObjects: true })
+              ...(include_inactive && { include_deleted_objects: true })
             },
             {
               headers: {
@@ -164,13 +168,14 @@ export async function GET(request: NextRequest) {
             }
           )
           
-          donationItems = textSearchResponse.data.objects || []
-          nextCursor = textSearchResponse.data.cursor
+          donationItems = searchResponse.data.objects || []
+          nextCursor = searchResponse.data.cursor
           
-          if (textSearchResponse.data.relatedObjects) {
-            donationItems = [...donationItems, ...textSearchResponse.data.relatedObjects]
+          if (searchResponse.data.related_objects) {
+            donationItems = [...donationItems, ...searchResponse.data.related_objects]
           }
         }
+        
       } catch (searchError) {
         logger.error("Error searching for donation items", { error: searchError })
         
@@ -191,88 +196,51 @@ export async function GET(request: NextRequest) {
           }, { status: searchError.response.status })
         }
         
-        // Don't fallback to listing all items - return empty result
-        logger.warn("Search failed, returning empty results to avoid inefficient full catalog list")
+        // Return empty result on search failure
+        logger.warn("Search failed, returning empty results")
         donationItems = []
       }
     }
     
-    // Process the items to extract donation amounts
+    // ✅ IMPROVED: Process the items to extract donation amounts
     const processedItems: ProcessedItem[] = []
     
     // Find main donation item(s)
-    const donationMainItems = donationItems.filter((item: CatalogItem) => 
+    const donationMainItems = donationItems.filter((item: CatalogObject) => 
       item.type === "ITEM" && 
-      item.itemData && 
-      (item.itemData.name === "Donations" || 
-       item.itemData.name?.toLowerCase().includes("donation"))
+      item.item_data && 
+      (item.item_data.name === "Donations" || 
+       item.item_data.name?.toLowerCase().includes("donation") ||
+       item.item_data.product_type === "DONATION")
     )
     
     // Process each main donation item
-    donationMainItems.forEach((donationItem: CatalogItem) => {
+    donationMainItems.forEach((donationItem: CatalogObject) => {
       // Find related variations
-      const variations = donationItems.filter((obj: CatalogItem) => 
+      const variations = donationItems.filter((obj: CatalogObject) => 
         obj.type === "ITEM_VARIATION" && 
-        obj.itemVariationData && 
-        obj.itemVariationData.itemId === donationItem.id
+        obj.item_variation_data && 
+        obj.item_variation_data.item_id === donationItem.id
       )
       
       // Process variations into standardized format
-      variations.forEach((variation: CatalogItem) => {
-        if (variation.itemVariationData && variation.itemVariationData.priceMoney) {
-          const amount = variation.itemVariationData.priceMoney.amount / 100 // Convert cents to dollars
+      variations.forEach((variation: CatalogObject) => {
+        if (variation.item_variation_data && variation.item_variation_data.price_money) {
+          const amount = variation.item_variation_data.price_money.amount / 100 // Convert cents to dollars
           processedItems.push({
             id: variation.id,
-            parentId: donationItem.id,
-            name: variation.itemVariationData.name,
+            parent_id: donationItem.id,
+            name: variation.item_variation_data.name,
             amount: amount,
-            formattedAmount: `${amount.toFixed(2)}`,
+            formatted_amount: `$${amount.toFixed(2)}`,
             type: "preset",
-            ordinal: variation.itemVariationData.ordinal
+            ordinal: variation.item_variation_data.ordinal
           })
         }
       })
     })
     
-    // If no "Donations" items found, look for any donation-related items
-    if (processedItems.length === 0) {
-      donationItems.forEach((item: CatalogItem) => {
-        if (item.type === "ITEM" && item.itemData) {
-          const itemName = item.itemData.name || ""
-          const itemDesc = item.itemData.description || ""
-          
-          // Check if this item seems donation-related
-          if (itemName.toLowerCase().includes("donation") || 
-              itemDesc.toLowerCase().includes("donation") ||
-              itemName.toLowerCase().includes("charity")) {
-            
-            // Find related variations
-            const variations = donationItems.filter((obj: CatalogItem) => 
-              obj.type === "ITEM_VARIATION" && 
-              obj.itemVariationData && 
-              obj.itemVariationData.itemId === item.id
-            )
-            
-            variations.forEach((variation: CatalogItem) => {
-              if (variation.itemVariationData && variation.itemVariationData.priceMoney) {
-                const amount = variation.itemVariationData.priceMoney.amount / 100
-                processedItems.push({
-                  id: variation.id,
-                  parentId: item.id,
-                  name: variation.itemVariationData.name,
-                  amount: amount,
-                  formattedAmount: `${amount.toFixed(2)}`,
-                  type: "preset",
-                  ordinal: variation.itemVariationData.ordinal
-                })
-              }
-            })
-          }
-        }
-      })
-    }
-    
-    // Sort by ordinal if available, otherwise by amount
+    // ✅ IMPROVED: Sort by ordinal if available, otherwise by amount
     processedItems.sort((a, b) => {
       if (a.ordinal !== undefined && b.ordinal !== undefined) {
         return a.ordinal - b.ordinal
@@ -287,14 +255,15 @@ export async function GET(request: NextRequest) {
       main_items: donationMainItems.length
     })
     
-    // Return formatted response
+    // ✅ IMPROVED: Return formatted response with better metadata
     return NextResponse.json({
       donation_items: processedItems,
-      parent_items: donationMainItems.map((item: CatalogItem) => ({
+      parent_items: donationMainItems.map((item: CatalogObject) => ({
         id: item.id,
-        name: item.itemData?.name,
-        description: item.itemData?.description,
-        updated_at: item.updatedAt,
+        name: item.item_data?.name,
+        description: item.item_data?.description,
+        product_type: item.item_data?.product_type,
+        updated_at: item.updated_at,
         version: item.version
       })),
       pagination: {
@@ -305,7 +274,7 @@ export async function GET(request: NextRequest) {
         total_variations: processedItems.length,
         total_parent_items: donationMainItems.length,
         search_strategy: item_id ? "specific_item" : 
-                        donationMainItems.length > 0 ? "exact_match" : "text_search"
+                        donationMainItems.length > 0 ? "list_filtered" : "search_fallback"
       }
     })
 
