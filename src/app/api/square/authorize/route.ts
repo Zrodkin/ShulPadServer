@@ -10,7 +10,7 @@ export async function GET(request: Request) {
 
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const REDIRECT_URI = process.env.REDIRECT_URI
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
 
     if (!SQUARE_APP_ID || !REDIRECT_URI) {
       logger.error("Missing required environment variables")
@@ -19,7 +19,16 @@ export async function GET(request: Request) {
 
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
-    const scopes = ["MERCHANT_PROFILE_READ", "PAYMENTS_WRITE", "PAYMENTS_WRITE_IN_PERSON", "PAYMENTS_READ"]
+    // ✅ UPDATED: Added missing OAuth scopes for complete donation system functionality
+    const scopes = [
+      "MERCHANT_PROFILE_READ",    // For merchant info and locations
+      "PAYMENTS_WRITE",           // For processing payments  
+      "PAYMENTS_WRITE_IN_PERSON", // For in-person payments with Square hardware
+      "PAYMENTS_READ",            // For reading payment details
+      "ITEMS_READ",               // ❌ WAS MISSING - Required for fetching preset donation amounts
+      "ITEMS_WRITE",              // ❌ WAS MISSING - Required for managing preset donation catalog  
+      "ORDERS_WRITE"              // ❌ WAS MISSING - Required for creating donation orders
+    ]
 
     const state = uuidv4()
 
@@ -69,7 +78,12 @@ export async function GET(request: Request) {
       `&redirect_uri=${REDIRECT_URI}` +
       (organizationId ? `&organization_id=${organizationId}` : "")
 
-    logger.info("Generated OAuth URL", { state, organizationId })
+    logger.info("Generated OAuth URL with updated scopes", { 
+      state, 
+      organizationId, 
+      scopes: scopes.join("+") 
+    })
+    
     return NextResponse.json({ authUrl, state })
   } catch (error) {
     logger.error("Error generating auth URL", { error })
