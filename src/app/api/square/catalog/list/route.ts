@@ -35,11 +35,18 @@ interface ProcessedItem {
   type: string;
 }
 
+interface SquareError {
+  category: string;
+  code: string;
+  detail: string;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const organization_id = searchParams.get("organization_id")
     const item_id = searchParams.get("item_id") // Optional: to retrieve a specific item and its variations
+    const cursor = searchParams.get("cursor") // For pagination
 
     if (!organization_id) {
       logger.error("Organization ID is required for catalog operations")
@@ -64,6 +71,7 @@ export async function GET(request: NextRequest) {
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
     
     let donationItems: CatalogItem[] = []
+    let nextCursor: string | undefined = undefined
     
     if (item_id) {
       // If item_id is provided, retrieve that specific item with its variations
@@ -71,7 +79,7 @@ export async function GET(request: NextRequest) {
         `https://connect.${SQUARE_DOMAIN}/v2/catalog/object/${item_id}?include_related_objects=true`,
         {
           headers: {
-            "Square-Version": "2023-09-25",
+            "Square-Version": "2024-12-18", // Use latest stable version
             "Authorization": `Bearer ${access_token}`,
             "Content-Type": "application/json"
           }
@@ -85,24 +93,25 @@ export async function GET(request: NextRequest) {
         donationItems = [...donationItems, ...catalogResponse.data.related_objects]
       }
     } else {
-      // Otherwise, search for all donation-related items
-      // First, try to find items named "Donations"
+      // Search for donation-related items using Square's recommended approach
       try {
+        // Strategy 1: Search for exact "Donations" item
         const searchResponse = await axios.post(
           `https://connect.${SQUARE_DOMAIN}/v2/catalog/search`,
           {
-            object_types: ["ITEM"],
+            objectTypes: ["ITEM"],
             query: {
-              prefix_query: {
-                attribute_name: "name",
-                attribute_prefix: "Donations"
+              exactQuery: {
+                attributeName: "name",
+                attributeValue: "Donations"
               }
             },
-            include_related_objects: true
+            includeRelatedObjects: true,
+            ...(cursor && { cursor })
           },
           {
             headers: {
-              "Square-Version": "2023-09-25",
+              "Square-Version": "2024-12-18",
               "Authorization": `Bearer ${access_token}`,
               "Content-Type": "application/json"
             }
@@ -111,27 +120,58 @@ export async function GET(request: NextRequest) {
         
         if (searchResponse.data.objects && searchResponse.data.objects.length > 0) {
           donationItems = searchResponse.data.objects
+          nextCursor = searchResponse.data.cursor
           
           // Also include related objects (variations)
           if (searchResponse.data.related_objects) {
             donationItems = [...donationItems, ...searchResponse.data.related_objects]
           }
+        } else {
+          // Strategy 2: Use text search for donation-related items
+          const textSearchResponse = await axios.post(
+            `https://connect.${SQUARE_DOMAIN}/v2/catalog/search`,
+            {
+              objectTypes: ["ITEM"],
+              query: {
+                textQuery: {
+                  keywords: ["donation"]
+                }
+              },
+              includeRelatedObjects: true,
+              ...(cursor && { cursor })
+            },
+            {
+              headers: {
+                "Square-Version": "2024-12-18",
+                "Authorization": `Bearer ${access_token}`,
+                "Content-Type": "application/json"
+              }
+            }
+          )
+          
+          donationItems = textSearchResponse.data.objects || []
+          nextCursor = textSearchResponse.data.cursor
+          
+          if (textSearchResponse.data.related_objects) {
+            donationItems = [...donationItems, ...textSearchResponse.data.related_objects]
+          }
         }
       } catch (searchError) {
         logger.error("Error searching for donation items", { error: searchError })
-        // If search fails, try listing all items
-        const listResponse = await axios.get(
-          `https://connect.${SQUARE_DOMAIN}/v2/catalog/list?types=ITEM,ITEM_VARIATION`,
-          {
-            headers: {
-              "Square-Version": "2023-09-25",
-              "Authorization": `Bearer ${access_token}`,
-              "Content-Type": "application/json"
-            }
-          }
-        )
         
-        donationItems = listResponse.data.objects || []
+        // Handle Square API specific errors
+        if (searchError.response?.data?.errors) {
+          const squareErrors: SquareError[] = searchError.response.data.errors
+          logger.error("Square API search errors", { errors: squareErrors })
+          return NextResponse.json({ 
+            error: "Square API search error", 
+            square_errors: squareErrors 
+          }, { status: searchError.response.status })
+        }
+        
+        // Don't fallback to listing all items - return empty result instead
+        logger.warn("Search failed, returning empty results to avoid inefficient full catalog list")
+        donationItems = []
       }
     }
     
@@ -146,6 +186,7 @@ export async function GET(request: NextRequest) {
     )
     
     if (donationItem) {
+      // Use related objects approach (Square's recommended pattern)
       const variations = donationItems.filter((obj: CatalogItem) => 
         obj.type === "ITEM_VARIATION" && 
         obj.item_variation_data && 
@@ -166,10 +207,8 @@ export async function GET(request: NextRequest) {
           })
         }
       })
-    }
-    
-    // If we didn't find a donation item or variations, look for any item that might be donation-related
-    if (processedItems.length === 0) {
+    } else {
+      // If no exact "Donations" item, look for any donation-related items
       donationItems.forEach((item: CatalogItem) => {
         if (item.type === "ITEM" && item.item_data) {
           const itemName = item.item_data.name || ""
@@ -177,43 +216,26 @@ export async function GET(request: NextRequest) {
           
           // Check if this item seems donation-related
           if (itemName.toLowerCase().includes("donation") || itemDesc.toLowerCase().includes("donation")) {
-            // Check if this item has variations
+            // Find related variations through related objects
             const variations = donationItems.filter((obj: CatalogItem) => 
               obj.type === "ITEM_VARIATION" && 
               obj.item_variation_data && 
               obj.item_variation_data.item_id === item.id
             )
             
-            if (variations.length > 0) {
-              variations.forEach((variation: CatalogItem) => {
-                if (variation.item_variation_data && variation.item_variation_data.price_money) {
-                  const amount = variation.item_variation_data.price_money.amount / 100
-                  processedItems.push({
-                    id: variation.id,
-                    parent_id: item.id,
-                    name: variation.item_variation_data.name,
-                    amount: amount,
-                    formatted_amount: `$${amount.toFixed(2)}`,
-                    type: "preset"
-                  })
-                }
-              })
-            } else if (item.item_data.variations) {
-              // Handle inline variations
-              item.item_data.variations.forEach((variation: CatalogItem) => {
-                if (variation.item_variation_data && variation.item_variation_data.price_money) {
-                  const amount = variation.item_variation_data.price_money.amount / 100
-                  processedItems.push({
-                    id: variation.id,
-                    parent_id: item.id,
-                    name: variation.item_variation_data.name,
-                    amount: amount,
-                    formatted_amount: `$${amount.toFixed(2)}`,
-                    type: "preset"
-                  })
-                }
-              })
-            }
+            variations.forEach((variation: CatalogItem) => {
+              if (variation.item_variation_data && variation.item_variation_data.price_money) {
+                const amount = variation.item_variation_data.price_money.amount / 100
+                processedItems.push({
+                  id: variation.id,
+                  parent_id: item.id,
+                  name: variation.item_variation_data.name,
+                  amount: amount,
+                  formatted_amount: `$${amount.toFixed(2)}`,
+                  type: "preset"
+                })
+              }
+            })
           }
         }
       })
@@ -226,17 +248,20 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({
       donation_items: processedItems,
+      cursor: nextCursor, // Include cursor for pagination
       raw_items: donationItems // Include raw items for debugging
     })
   } catch (error: any) {
     logger.error("Error retrieving catalog items", { error })
     
-    // Return more detailed error info if available
-    if (error.response && error.response.data) {
+    // Handle Square API specific errors
+    if (error.response?.data?.errors) {
+      const squareErrors: SquareError[] = error.response.data.errors
+      logger.error("Square API errors", { errors: squareErrors })
       return NextResponse.json({ 
-        error: "Error from Square API", 
-        details: error.response.data 
-      }, { status: 500 })
+        error: "Square API error", 
+        square_errors: squareErrors 
+      }, { status: error.response.status })
     }
     
     return NextResponse.json({ error: "Error retrieving catalog items" }, { status: 500 })
