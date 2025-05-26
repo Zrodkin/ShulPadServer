@@ -177,29 +177,33 @@ export async function GET(request: NextRequest) {
         }
         
       } catch (searchError) {
-        logger.error("Error searching for donation items", { error: searchError })
-        
-        // Handle Square API specific errors
-        if (searchError.response?.data?.errors) {
-          const squareErrors: SquareError[] = searchError.response.data.errors
-          logger.error("Square API search errors", { errors: squareErrors })
-          
-          const firstError = squareErrors[0]
-          return NextResponse.json({ 
-            error: firstError.detail || firstError.code,
-            square_error: {
-              category: firstError.category,
-              code: firstError.code,
-              detail: firstError.detail,
-              field: firstError.field
-            }
-          }, { status: searchError.response.status })
+  logger.error("Error searching for donation items", { error: searchError })
+  
+  // Handle Square API specific errors with proper type checking
+  if (searchError && typeof searchError === 'object' && 'response' in searchError) {
+    const axiosError = searchError as any; // Cast to access axios error properties
+    
+    if (axiosError.response?.data?.errors) {
+      const squareErrors: SquareError[] = axiosError.response.data.errors
+      logger.error("Square API search errors", { errors: squareErrors })
+      
+      const firstError = squareErrors[0]
+      return NextResponse.json({ 
+        error: firstError.detail || firstError.code,
+        square_error: {
+          category: firstError.category,
+          code: firstError.code,
+          detail: firstError.detail,
+          field: firstError.field
         }
-        
-        // Return empty result on search failure
-        logger.warn("Search failed, returning empty results")
-        donationItems = []
-      }
+      }, { status: axiosError.response.status })
+    }
+  }
+  
+  // Return empty result on search failure
+  logger.warn("Search failed, returning empty results")
+  donationItems = []
+}
     }
     
     // ✅ IMPROVED: Process the items to extract donation amounts
