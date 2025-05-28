@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
       parent_item_id = null,
       parent_item_name = "Donations",
       parent_item_description = "Donation preset amounts",
-      replace_existing = false
+      replace_existing = false,
+      validate_existing = false,  // NEW
+      force_new = false          // NEW
     } = body
 
     if (!organization_id) {
@@ -98,6 +100,21 @@ export async function POST(request: NextRequest) {
     }
 
     const { access_token, location_id } = result.rows[0]
+
+    // NEW: Validate existing parent item if provided and not forcing new
+    let validatedParentId = parent_item_id;
+    if (parent_item_id && validate_existing && !force_new) {
+      const isValid = await validateCatalogItemInBatch(access_token, parent_item_id);
+      if (!isValid) {
+        logger.warn(`Parent item ${parent_item_id} no longer exists, will create new one`);
+        validatedParentId = null;
+      }
+    }
+
+    // Override parent_item_id if force_new is true
+    if (force_new) {
+      validatedParentId = null;
+    }
     
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
@@ -109,8 +126,8 @@ export async function POST(request: NextRequest) {
     // ✅ FIXED: Prepare the batch objects with correct structure
     const batchObjects: CatalogObject[] = []
     
-    // Determine parent item ID (use existing or create new temporary ID)
-    let donationItemId = parent_item_id
+    // Determine parent item ID (use validated existing or create new temporary ID)
+    let donationItemId = validatedParentId  // Changed from parent_item_id
     if (!donationItemId) {
       donationItemId = `#Donations_${uuidv4().substring(0, 8)}`
       
@@ -161,7 +178,9 @@ export async function POST(request: NextRequest) {
       item_count: batchObjects.length,
       amounts_count: amounts.length,
       parent_id: donationItemId,
-      replace_existing
+      replace_existing,
+      validate_existing,
+      force_new
     })
 
     // ✅ FIXED: Make the request with correct API version and structure
@@ -242,5 +261,33 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json({ error: "Error batch upserting catalog items" }, { status: 500 })
+  }
+}
+
+/**
+ * NEW: Validate catalog item for batch operations
+ */
+async function validateCatalogItemInBatch(accessToken: string, catalogItemId: string): Promise<boolean> {
+  try {
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production";
+    const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com";
+    
+    const response = await axios.get(
+      `https://connect.${SQUARE_DOMAIN}/v2/catalog/object/${catalogItemId}`,
+      {
+        headers: {
+          "Square-Version": "2025-05-21",
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    
+    return response.status === 200 && response.data.object;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      return false;
+    }
+    return false; // Assume invalid if we can't verify
   }
 }

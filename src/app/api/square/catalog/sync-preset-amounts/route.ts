@@ -239,7 +239,7 @@ async function syncPresetAmountsForOrganization(organizationId: string, forceSyn
 }
 
 /**
- * Process a single organization's preset amounts sync
+ * Process a single organization's preset amounts sync with robust error handling
  */
 async function processOrganizationSync(db: any, row: any, forceSynchronization: boolean = false): Promise<{ 
   success: boolean; 
@@ -270,22 +270,38 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
 
     let donationItemId = currentCatalogId;
     
-    // If no donation item exists or we're forcing a new one
+    // STEP 1: Validate existing parent item (if any)
+    if (donationItemId) {
+      const isValid = await validateCatalogItem(accessToken, donationItemId);
+      if (!isValid) {
+        logger.warn(`Parent item ${donationItemId} no longer exists in Square, will create new one`);
+        donationItemId = null;
+        
+        // Clear stale parent ID from database
+        await client.query(
+          "UPDATE kiosk_settings SET catalog_parent_id = NULL WHERE id = $1",
+          [kioskId]
+        );
+      }
+    }
+    
+    // STEP 2: Create new parent item if needed
     if (!donationItemId || forceSynchronization) {
-      // Create parent "Donations" catalog item in Square
       donationItemId = await createDonationsItemInSquare(accessToken, locationId);
       
       if (!donationItemId) {
         await client.query("ROLLBACK");
         return { 
           success: false, 
-          reason: "Failed to create Donations catalog item in Square" 
+          reason: "Failed to create new Donations catalog item in Square" 
         };
       }
+      
+      logger.info(`Created new parent donation item: ${donationItemId}`);
     }
 
-    // Create/update variations for each preset amount
-    const catalogVariations = await createDonationVariationsInSquare(
+    // STEP 3: Create/update variations with robust error handling
+    const catalogVariations = await createDonationVariationsWithRetry(
       accessToken, 
       donationItemId, 
       presetAmounts.map((amount: string) => parseFloat(amount))
@@ -299,15 +315,13 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
       };
     }
 
-    // Clear existing preset_donations for this organization if we have any
-    if (currentCatalogId) {
-      await client.query(
-        "DELETE FROM preset_donations WHERE organization_id = $1",
-        [organizationId]
-      );
-    }
+    // STEP 4: Clear existing preset_donations for this organization
+    await client.query(
+      "DELETE FROM preset_donations WHERE organization_id = $1",
+      [organizationId]
+    );
 
-    // Insert records into preset_donations table
+    // STEP 5: Insert new records into preset_donations table
     for (let i = 0; i < presetAmounts.length; i++) {
       const amount = parseFloat(presetAmounts[i]);
       const variation = catalogVariations.find((v: CatalogItem) => 
@@ -324,7 +338,7 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
       }
     }
 
-    // Update kiosk_settings with the catalog_parent_id and clear preset_amounts
+    // STEP 6: Update kiosk_settings with the catalog_parent_id
     await client.query(
       `UPDATE kiosk_settings 
        SET catalog_parent_id = $1, 
@@ -357,11 +371,73 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
 }
 
 /**
+ * NEW: Validate that a catalog item still exists in Square
+ */
+async function validateCatalogItem(accessToken: string, catalogItemId: string): Promise<boolean> {
+  try {
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production";
+    const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com";
+    
+    const response = await axios.get(
+      `https://connect.${SQUARE_DOMAIN}/v2/catalog/object/${catalogItemId}`,
+      {
+        headers: {
+          "Square-Version": "2023-09-25",
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    
+    return response.status === 200 && response.data.object;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      logger.info(`Catalog item ${catalogItemId} not found in Square (deleted externally)`);
+      return false;
+    }
+    logger.warn(`Error validating catalog item ${catalogItemId}:`, { error: error.message });
+    return false; // Assume invalid if we can't verify
+  }
+}
+
+/**
+ * NEW: Create donation variations with retry logic for failed items
+ */
+async function createDonationVariationsWithRetry(
+  accessToken: string, 
+  donationItemId: string, 
+  amounts: number[]
+): Promise<CatalogItem[]> {
+  try {
+    // First attempt: try normal creation
+    const variations = await createDonationVariationsInSquare(accessToken, donationItemId, amounts);
+    
+    if (variations && variations.length > 0) {
+      return variations;
+    }
+    
+    // If that failed, it might be because the parent item is stale
+    // Create a completely new parent item and try again
+    logger.warn("Initial variation creation failed, creating fresh parent item");
+    
+    const newParentId = await createDonationsItemInSquare(accessToken, ""); // Will use default location
+    if (!newParentId) {
+      throw new Error("Failed to create new parent item on retry");
+    }
+    
+    return await createDonationVariationsInSquare(accessToken, newParentId, amounts);
+  } catch (error) {
+    logger.error('Error creating donation variations with retry:', { error });
+    return [];
+  }
+}
+
+/**
  * Create a Donations catalog item in Square
  */
 async function createDonationsItemInSquare(accessToken: string, locationId: string): Promise<string | null> {
   try {
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox";
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production";
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com";
     
     const item_id = `ITEM_DONATIONS_${uuidv4().substring(0, 8)}`;
@@ -411,7 +487,7 @@ async function createDonationVariationsInSquare(
   amounts: number[]
 ): Promise<CatalogItem[]> {
   try {
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox";
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production";
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com";
     
     // Prepare batch objects for variations
