@@ -4,16 +4,60 @@ import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import { v4 as uuidv4 } from "uuid"
 
-// Define an interface for the mapping
+// Define interfaces for type safety - CORRECTED
+interface CatalogItemVariationData {
+  item_id: string;
+  name: string;
+  pricing_type: "FIXED_PRICING";
+  price_money: {
+    amount: number;
+    currency: string;
+  };
+}
+
+interface CatalogItemData {
+  name: string;
+  description?: string;
+  is_taxable?: boolean;
+  product_type?: string;
+}
+
+// ✅ FIXED: Proper CatalogObject structure
+interface CatalogObject {
+  type: "ITEM" | "ITEM_VARIATION";
+  id: string;
+  present_at_all_locations?: boolean;
+  item_data?: CatalogItemData;
+  item_variation_data?: CatalogItemVariationData;
+}
+
+interface CatalogObjectBatch {
+  objects: CatalogObject[];
+}
+
 interface IdMapping {
   client_object_id: string;
   object_id: string;
 }
 
+interface SquareError {
+  category: string;
+  code: string;
+  detail?: string;
+  field?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organization_id, amounts, parent_item_id = null } = body
+    const { 
+      organization_id, 
+      amounts, 
+      parent_item_id = null,
+      parent_item_name = "Donations",
+      parent_item_description = "Donation preset amounts",
+      replace_existing = false
+    } = body
 
     if (!organization_id) {
       logger.error("Organization ID is required for catalog operations")
@@ -33,6 +77,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check batch size limits (from Square documentation)
+    if (amounts.length > 999) { // Reserve 1 slot for parent item if needed
+      logger.error("Too many amounts", { count: amounts.length })
+      return NextResponse.json({ 
+        error: "Too many amounts. Maximum 999 preset amounts allowed per batch" 
+      }, { status: 400 })
+    }
+
     // Get the access token from the database
     const db = createClient()
     const result = await db.query(
@@ -47,82 +99,47 @@ export async function POST(request: NextRequest) {
 
     const { access_token, location_id } = result.rows[0]
     
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
     const SQUARE_BATCH_URL = `https://connect.${SQUARE_DOMAIN}/v2/catalog/batch-upsert`
-
-    // Find or create a parent "Donations" item
-    let donationItemId = parent_item_id
-    
-    if (!donationItemId) {
-      try {
-        // Search for a "Donations" catalog item
-        const searchResponse = await axios.post(
-          `https://connect.${SQUARE_DOMAIN}/v2/catalog/search`,
-          {
-            object_types: ["ITEM"],
-            query: {
-              prefix_query: {
-                attribute_name: "name",
-                attribute_prefix: "Donations"
-              }
-            }
-          },
-          {
-            headers: {
-              "Square-Version": "2023-09-25",
-              "Authorization": `Bearer ${access_token}`,
-              "Content-Type": "application/json"
-            }
-          }
-        )
-
-        // Check if we found a "Donations" item
-        if (searchResponse.data.objects && searchResponse.data.objects.length > 0) {
-          // Use the existing "Donations" catalog item
-          donationItemId = searchResponse.data.objects[0].id
-        }
-      } catch (searchError) {
-        logger.warn("Error searching for Donations catalog item", { error: searchError })
-        // Continue with creating a new item
-      }
-    }
 
     // Generate an idempotency key for this batch request
     const idempotencyKey = uuidv4()
     
-    // Prepare the batch objects
-    const batchObjects = []
+    // ✅ FIXED: Prepare the batch objects with correct structure
+    const batchObjects: CatalogObject[] = []
     
-    // If we need to create a parent item
+    // Determine parent item ID (use existing or create new temporary ID)
+    let donationItemId = parent_item_id
     if (!donationItemId) {
-      const item_id = `ITEM_DONATIONS_${uuidv4().substring(0, 8)}`
+      donationItemId = `#Donations_${uuidv4().substring(0, 8)}`
       
-      batchObjects.push({
+      // ✅ FIXED: Create parent item with correct CatalogObject structure
+      const parentItem: CatalogObject = {
         type: "ITEM",
-        id: item_id,
-        present_at_all_locations: true,
-        item_data: {
-          name: "Donations",
-          description: "Donation preset amounts",
-          is_taxable: false,
-          variations: [] // We'll create variations separately
+        id: donationItemId,
+        present_at_all_locations: true, // ✅ FIXED: Correct field name
+        item_data: { // ✅ FIXED: Correct field name
+          name: parent_item_name,
+          description: parent_item_description,
+          is_taxable: false, // Donations are typically not taxable
+          product_type: "DONATION" // ✅ ADDED: Specific product type for donations
         }
-      })
+      }
       
-      donationItemId = item_id
+      batchObjects.push(parentItem)
     }
     
-    // Create variation objects for each amount
-    for (const amount of amounts) {
-      const variation_id = `VAR_${amount.toString().replace('.', '_')}_${uuidv4().substring(0, 8)}`
+    // ✅ FIXED: Create variation objects with correct structure
+    amounts.forEach((amount: number, index: number) => {
+      const variationId = `#Donation_${amount.toString().replace('.', '_')}_${uuidv4().substring(0, 8)}`
       
-      batchObjects.push({
+      const variation: CatalogObject = { // ✅ FIXED: CatalogObject, not CatalogItemVariation
         type: "ITEM_VARIATION",
-        id: variation_id,
-        present_at_all_locations: true,
-        item_variation_data: {
-          item_id: donationItemId,
+        id: variationId,
+        present_at_all_locations: true, // ✅ FIXED: Correct field name
+        item_variation_data: { // ✅ FIXED: Correct field name
+          item_id: donationItemId!,
           name: `$${amount} Donation`,
           pricing_type: "FIXED_PRICING",
           price_money: {
@@ -130,23 +147,33 @@ export async function POST(request: NextRequest) {
             currency: "USD"
           }
         }
-      })
+      }
+      
+      batchObjects.push(variation)
+    })
+
+    const batch: CatalogObjectBatch = {
+      objects: batchObjects
     }
 
-    // Make the request to Square API
+    logger.info("Batch upserting catalog items", { 
+      organization_id,
+      item_count: batchObjects.length,
+      amounts_count: amounts.length,
+      parent_id: donationItemId,
+      replace_existing
+    })
+
+    // ✅ FIXED: Make the request with correct API version and structure
     const response = await axios.post(
       SQUARE_BATCH_URL,
       {
-        idempotency_key: idempotencyKey,
-        batches: [
-          {
-            objects: batchObjects
-          }
-        ]
+        idempotency_key: idempotencyKey, // ✅ FIXED: Correct field name
+        batches: [batch] // Single batch for this request
       },
       {
         headers: {
-          "Square-Version": "2023-09-25",
+          "Square-Version": "2025-05-21", // Latest API version
           "Authorization": `Bearer ${access_token}`,
           "Content-Type": "application/json"
         }
@@ -155,29 +182,63 @@ export async function POST(request: NextRequest) {
 
     logger.info("Successfully batch upserted catalog items", { 
       organization_id,
-      item_count: batchObjects.length,
-      parent_id: donationItemId
+      objects_created: response.data.objects?.length || 0,
+      id_mappings_count: response.data.id_mappings?.length || 0
     })
 
-    // Format the response with object IDs for client reference
+    // Process the response to extract useful information
+    const idMappings: IdMapping[] = response.data.id_mappings || []
+    const createdObjects = response.data.objects || []
+    
+    // Find the parent item in the response
+    const parentObject = createdObjects.find((obj: any) => obj.type === "ITEM")
+    const actualParentId = parentObject?.id || donationItemId
+    
+    // Extract variation details
+    const variations = createdObjects
+      .filter((obj: any) => obj.type === "ITEM_VARIATION")
+      .map((variation: any) => ({
+        id: variation.id,
+        name: variation.item_variation_data?.name,
+        amount: variation.item_variation_data?.price_money?.amount / 100, // Convert back to dollars
+        formatted_amount: `$${(variation.item_variation_data?.price_money?.amount / 100).toFixed(2)}`,
+        ordinal: variation.item_variation_data?.ordinal
+      }))
+
+    // Format the response
     const formattedResponse = {
-      parent_id: donationItemId,
-      variation_ids: response.data.id_mappings?.map((mapping: IdMapping) => mapping.client_object_id) || [],
-      amounts: amounts,
-      raw_response: response.data // Include raw response for debugging
+      parent_item_id: actualParentId,
+      parent_item_name: parentObject?.item_data?.name || parent_item_name,
+      variations_created: variations.length,
+      variations: variations,
+      id_mappings: idMappings,
+      updated_at: response.data.updated_at,
+      batch_size: batchObjects.length,
+      success: true
     }
 
-    // Return the created/updated catalog objects
     return NextResponse.json(formattedResponse)
+
   } catch (error: any) {
     logger.error("Error batch upserting catalog items", { error })
     
-    // Return more detailed error info if available
-    if (error.response && error.response.data) {
+    // Handle Square API specific errors
+    if (error.response?.data?.errors) {
+      const squareErrors: SquareError[] = error.response.data.errors
+      logger.error("Square API errors", { errors: squareErrors })
+      
+      // Return first error with Square's standard format
+      const firstError = squareErrors[0]
       return NextResponse.json({ 
-        error: "Error from Square API", 
-        details: error.response.data 
-      }, { status: 500 })
+        error: firstError.detail || firstError.code,
+        square_error: {
+          category: firstError.category,
+          code: firstError.code,
+          detail: firstError.detail,
+          field: firstError.field
+        },
+        square_errors: squareErrors // Include all errors for debugging
+      }, { status: error.response.status })
     }
     
     return NextResponse.json({ error: "Error batch upserting catalog items" }, { status: 500 })

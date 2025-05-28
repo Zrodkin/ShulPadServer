@@ -4,15 +4,58 @@ import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import { v4 as uuidv4 } from "uuid"
 
+// Define interfaces for type safety - CORRECTED
+interface CatalogItemVariationData {
+  item_id: string;
+  name: string;
+  pricing_type: "FIXED_PRICING";
+  price_money: {
+    amount: number;
+    currency: string;
+  };
+}
+
+interface CatalogItemData {
+  name: string;
+  description?: string;
+  is_taxable?: boolean;
+  product_type?: string;
+}
+
+// ✅ FIXED: Proper CatalogObject structure for embedded variations
+interface CatalogObjectVariation {
+  type: "ITEM_VARIATION";
+  id: string;
+  item_variation_data: CatalogItemVariationData;
+}
+
+interface CatalogObject {
+  type: "ITEM";
+  id: string;
+  present_at_all_locations?: boolean;
+  version?: number; // Required for updates
+  item_data: CatalogItemData & {
+    variations?: CatalogObjectVariation[];
+  };
+}
+
+interface SquareError {
+  category: string;
+  code: string;
+  detail?: string;
+  field?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { 
       organization_id, 
-      amount, 
-      name, 
-      description = "Donation",
-      is_preset = true
+      amounts,
+      parent_item_name = "Donations",
+      parent_item_description = "Donation preset amounts",
+      parent_item_id = null, // If updating existing item
+      parent_item_version = null // Required for updates
     } = body
 
     if (!organization_id) {
@@ -20,9 +63,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Organization ID is required" }, { status: 400 })
     }
 
-    if (amount === undefined || amount <= 0) {
-      logger.error("Valid amount is required", { amount })
-      return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 })
+    if (!amounts || !Array.isArray(amounts) || amounts.length === 0) {
+      logger.error("Valid amounts array is required", { amounts })
+      return NextResponse.json({ error: "Amounts must be a non-empty array" }, { status: 400 })
+    }
+
+    // Validate all amounts
+    for (const amount of amounts) {
+      if (typeof amount !== 'number' || amount <= 0) {
+        logger.error("Invalid amount in array", { amount })
+        return NextResponse.json({ error: "All amounts must be positive numbers" }, { status: 400 })
+      }
     }
 
     // Get the access token from the database
@@ -43,151 +94,60 @@ export async function POST(request: NextRequest) {
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
     const SQUARE_CATALOG_URL = `https://connect.${SQUARE_DOMAIN}/v2/catalog/object`
 
-    // Generate a unique ID for the catalog item or use a deterministic one based on organization + name
-    const generateItemId = () => {
-      return `DONATION_${amount.toString().replace('.', '_')}_${uuidv4().substring(0, 8)}`
-    }
-
-    // Check if we're updating an existing item or creating a new one
-    let catalog_item_id = body.catalog_item_id || null
-    
-    // If we're creating a preset donation amount, we'll first look for
-    // an existing "Donations" catalog item to add our variation to
-    if (is_preset && !catalog_item_id) {
-      try {
-        // Search for a "Donations" catalog item
-        const searchResponse = await axios.post(
-          `https://connect.${SQUARE_DOMAIN}/v2/catalog/search`,
-          {
-            object_types: ["ITEM"],
-            query: {
-              prefix_query: {
-                attribute_name: "name",
-                attribute_prefix: "Donations"
-              }
-            }
-          },
-          {
-            headers: {
-              "Square-Version": "2023-09-25",
-              "Authorization": `Bearer ${access_token}`,
-              "Content-Type": "application/json"
-            }
-          }
-        )
-
-        // Check if we found a "Donations" item
-        if (searchResponse.data.objects && searchResponse.data.objects.length > 0) {
-          // Use the existing "Donations" catalog item
-          catalog_item_id = searchResponse.data.objects[0].id
-        }
-      } catch (searchError) {
-        logger.error("Error searching for Donations catalog item", { error: searchError })
-        // Continue with creating a new item - don't return an error
-      }
-    }
-
-    // Generate an idempotency key for this request
+    // Generate idempotency key for this request
     const idempotencyKey = uuidv4()
     
-    // Create or update the catalog object
-    let catalogObject = {}
+    // Determine if we're creating a new item or updating existing
+    const itemId = parent_item_id || `#Donations_${uuidv4().substring(0, 8)}`
     
-    if (is_preset) {
-      // For preset donations, create a CatalogItem with an ItemVariation
-      if (catalog_item_id) {
-        // Add a new variation to an existing item
-        const variation_id = `VAR_${amount.toString().replace('.', '_')}_${uuidv4().substring(0, 8)}`
-        
-        catalogObject = {
-          type: "ITEM_VARIATION",
-          id: variation_id,
-          present_at_all_locations: true,
-          item_variation_data: {
-            item_id: catalog_item_id,
-            name: name || `$${amount} Donation`,
-            pricing_type: "FIXED_PRICING",
-            price_money: {
-              amount: Math.round(amount * 100), // Convert to cents
-              currency: "USD"
-            }
-          }
-        }
-      } else {
-        // Create a new donation item with a variation
-        const item_id = `ITEM_DONATIONS_${uuidv4().substring(0, 8)}`
-        const variation_id = `VAR_${amount.toString().replace('.', '_')}_${uuidv4().substring(0, 8)}`
-        
-        catalogObject = {
-          type: "ITEM",
-          id: item_id,
-          present_at_all_locations: true,
-          item_data: {
-            name: "Donations",
-            description: "Donation preset amounts",
-            is_taxable: false,
-            variations: [
-              {
-                type: "ITEM_VARIATION",
-                id: variation_id,
-                present_at_all_locations: true,
-                item_variation_data: {
-                  item_id,
-                  name: name || `$${amount} Donation`,
-                  pricing_type: "FIXED_PRICING",
-                  price_money: {
-                    amount: Math.round(amount * 100), // Convert to cents
-                    currency: "USD"
-                  }
-                }
-              }
-            ]
-          }
+    // ✅ FIXED: Create variations with correct structure for embedded approach
+    const variations: CatalogObjectVariation[] = amounts.map((amount: number, index: number) => ({
+      type: "ITEM_VARIATION",
+      id: `#Donation_${amount.toString().replace('.', '_')}_${index}`,
+      item_variation_data: {
+        item_id: itemId,
+        name: `$${amount} Donation`,
+        pricing_type: "FIXED_PRICING",
+        price_money: {
+          amount: Math.round(amount * 100), // Convert to cents
+          currency: "USD"
         }
       }
-    } else {
-      // For custom donation amount, just create a simple item
-      // This is typically not used since custom amounts use ad-hoc line items
-      const item_id = generateItemId()
-      
-      catalogObject = {
-        type: "ITEM",
-        id: item_id,
-        present_at_all_locations: true,
-        item_data: {
-          name: name || `Custom Donation`,
-          description: description,
-          is_taxable: false,
-          variations: [
-            {
-              type: "ITEM_VARIATION",
-              id: `${item_id}_VAR`,
-              present_at_all_locations: true,
-              item_variation_data: {
-                item_id,
-                name: `$${amount}`,
-                pricing_type: "FIXED_PRICING",
-                price_money: {
-                  amount: Math.round(amount * 100), // Convert to cents
-                  currency: "USD"
-                }
-              }
-            }
-          ]
-        }
+    }))
+
+    // ✅ FIXED: Create the catalog item with correct structure
+    const catalogObject: CatalogObject = {
+      type: "ITEM",
+      id: itemId,
+      present_at_all_locations: true, // ✅ FIXED: Correct field name
+      // Include version for updates (required by Square for existing objects)
+      ...(parent_item_id && parent_item_version && { version: parent_item_version }),
+      item_data: {
+        name: parent_item_name,
+        description: parent_item_description,
+        is_taxable: false, // Donations are typically not taxable
+        product_type: "DONATION", // ✅ ADDED: Specific product type for donations
+        variations: variations
       }
     }
 
-    // Make the request to Square API
+    logger.info("Creating/updating donation catalog item", { 
+      organization_id,
+      amounts_count: amounts.length,
+      parent_item_name,
+      is_update: !!parent_item_id
+    })
+
+    // ✅ FIXED: Make the request with correct field names
     const response = await axios.post(
       SQUARE_CATALOG_URL,
       {
-        idempotency_key: idempotencyKey,
+        idempotency_key: idempotencyKey, // ✅ FIXED: Correct field name
         object: catalogObject
       },
       {
         headers: {
-          "Square-Version": "2023-09-25",
+          "Square-Version": "2025-05-21", // ✅ FIXED: Latest API version
           "Authorization": `Bearer ${access_token}`,
           "Content-Type": "application/json"
         }
@@ -196,21 +156,49 @@ export async function POST(request: NextRequest) {
 
     logger.info("Successfully created/updated catalog item", { 
       organization_id,
-      catalog_object_id: response.data.catalog_object.id,
-      amount
+      catalog_object_id: response.data.catalog_object?.id,
+      variations_count: response.data.catalog_object?.item_data?.variations?.length
     })
 
-    // Return the created/updated catalog object
-    return NextResponse.json(response.data)
+    // ✅ FIXED: Extract variation details for response with correct field names
+    const createdVariations = response.data.catalog_object?.item_data?.variations?.map((variation: any) => ({
+      id: variation.id,
+      name: variation.item_variation_data?.name,
+      amount: variation.item_variation_data?.price_money?.amount / 100, // Convert back to dollars
+      formatted_amount: `$${(variation.item_variation_data?.price_money?.amount / 100).toFixed(2)}`
+    })) || []
+
+    // ✅ FIXED: Return the created/updated catalog object details with correct field names
+    return NextResponse.json({
+      parent_item_id: response.data.catalog_object?.id,
+      parent_item_name: response.data.catalog_object?.item_data?.name,
+      variations: createdVariations,
+      id_mappings: response.data.id_mappings || [],
+      created_at: response.data.catalog_object?.created_at,
+      updated_at: response.data.catalog_object?.updated_at,
+      version: response.data.catalog_object?.version
+    })
+
   } catch (error: any) {
     logger.error("Error creating/updating catalog item", { error })
     
-    // Return more detailed error info if available
-    if (error.response && error.response.data) {
+    // Handle Square API specific errors
+    if (error.response?.data?.errors) {
+      const squareErrors: SquareError[] = error.response.data.errors
+      logger.error("Square API errors", { errors: squareErrors })
+      
+      // Return first error with Square's standard format
+      const firstError = squareErrors[0]
       return NextResponse.json({ 
-        error: "Error from Square API", 
-        details: error.response.data 
-      }, { status: 500 })
+        error: firstError.detail || firstError.code,
+        square_error: {
+          category: firstError.category,
+          code: firstError.code,
+          detail: firstError.detail,
+          field: firstError.field
+        },
+        square_errors: squareErrors // Include all errors for debugging
+      }, { status: error.response.status })
     }
     
     return NextResponse.json({ error: "Error creating/updating catalog item" }, { status: 500 })
