@@ -134,10 +134,10 @@ try {
 }
 
     // If no organization_id was provided, create one based on merchant_id
-    if (!organizationId || organizationId === "default") {
-      organizationId = `org_${merchant_id}`
-      logger.info("Generated organization ID from merchant ID", { organizationId })
-    }
+    //if (!organizationId || organizationId === "default") {
+      //organizationId = `org_${merchant_id}`
+      //logger.info("Generated organization ID from merchant ID", { organizationId })
+    //}
 
     // Store tokens in both places using a transaction
     try {
