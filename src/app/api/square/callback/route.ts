@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get("code")
     const state = searchParams.get("state")
-    // Get organization_id from request or use a unique value based on merchant_id later
     let organizationId = searchParams.get("organization_id") || "default"
 
     logger.info("Received OAuth callback", { state, hasCode: !!code, hasOrgId: !!organizationId })
@@ -23,28 +22,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=missing_state`)
     }
 
+    // Initialize database connection
+    const db = createClient()
+
     // Validate that the state exists in our database
     try {
-      const db = createClient()
       const stateResult = await db.query("SELECT state FROM square_pending_tokens WHERE state = $1", [state])
 
       if (stateResult.rows.length === 0) {
         logger.error("Invalid state parameter received", { state })
-        // Redirect to error page instead of returning JSON
         return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_state`)
       }
 
       logger.debug("State validation successful", { state })
     } catch (dbError) {
       logger.error("Database error during state validation", { error: dbError })
-      // Redirect to error page instead of returning JSON
       return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=database_error`)
     }
 
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
     const REDIRECT_URI = process.env.REDIRECT_URI
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
 
     if (!SQUARE_APP_ID || !SQUARE_APP_SECRET || !REDIRECT_URI) {
       logger.error("Missing required environment variables")
@@ -59,7 +58,7 @@ export async function GET(request: NextRequest) {
     logger.info("Exchanging authorization code for tokens")
 
     // Exchange the authorization code for access token
-    let data
+    let tokenData
     try {
       const response = await axios.post(
         SQUARE_TOKEN_URL,
@@ -78,11 +77,11 @@ export async function GET(request: NextRequest) {
         },
       )
 
-      data = response.data
+      tokenData = response.data
       logger.debug("Token exchange successful")
 
-      if (data.error) {
-        logger.error("Token exchange error", { error: data.error })
+      if (tokenData.error) {
+        logger.error("Token exchange error", { error: tokenData.error })
         return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=token_exchange`)
       }
     } catch (error) {
@@ -90,113 +89,170 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=token_exchange`)
     }
 
-    const { access_token, refresh_token, expires_at, merchant_id } = data
+    const { access_token, refresh_token, expires_at, merchant_id } = tokenData
 
-    // Get the merchant's locations to find a location ID
-let location_id = null
-try {
-  logger.info("Fetching merchant locations")
-  const locationsResponse = await axios.get(`https://connect.${SQUARE_DOMAIN}/v2/locations`, {
-    headers: {
-      Authorization: `Bearer ${access_token}`,
-      "Content-Type": "application/json",
-      "Square-Version": "2023-09-25",
-    },
-  })
-
-  const locations = locationsResponse.data.locations
-  logger.debug("Found locations", { count: locations.length })
-
-  // Define an interface for the location object
-  interface SquareLocation {
-    id: string;
-    name: string;
-    status: string;
-    [key: string]: any; // For other properties we don't explicitly use
-  }
-
-  // Get the first active location or the first location if none are active
-  // Use proper typing for the location parameter
-  const primaryLocation = locations.find((loc: SquareLocation) => loc.status === "ACTIVE") || locations[0]
-
-  if (primaryLocation) {
-    location_id = primaryLocation.id
-    logger.info("Selected primary location", { location_id, location_name: primaryLocation.name })
-  } else {
-    logger.warn("No locations found for merchant")
-    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=no_locations`)
-  }
-} catch (error) {
-  logger.error("Error fetching merchant locations", { error })
-  // Continue with flow but log the error - we'll use the merchant_id as a fallback
-  location_id = merchant_id
-  logger.warn("Using merchant_id as fallback for location_id", { merchant_id })
-}
-
-    // If no organization_id was provided, create one based on merchant_id
-    //if (!organizationId || organizationId === "default") {
-      //organizationId = `org_${merchant_id}`
-      //logger.info("Generated organization ID from merchant ID", { organizationId })
-    //}
-
-    // Store tokens in both places using a transaction
+    // Get the merchant's locations
     try {
-      const db = createClient()
+      logger.info("Fetching merchant locations")
+      const locationsResponse = await axios.get(`https://connect.${SQUARE_DOMAIN}/v2/locations`, {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+          "Content-Type": "application/json",
+          "Square-Version": "2023-09-25",
+        },
+      })
 
-      // Begin transaction
-      await db.query("BEGIN")
+      const locations = locationsResponse.data.locations
+      logger.info("Found locations", { count: locations.length })
 
-      try {
-        // Store in temporary table for OAuth flow completion
-        await db.query(
-          `UPDATE square_pending_tokens SET
-          access_token = $2, 
-          refresh_token = $3, 
-          merchant_id = $4,
-          location_id = $5,
-          expires_at = $6
-        WHERE state = $1`,
-          [state, access_token, refresh_token, merchant_id, location_id, expires_at],
-        )
-
-        // Store in permanent table for future use
-        await db.query(
-          `INSERT INTO square_connections (
-          organization_id, 
-          merchant_id,
-          location_id,
-          access_token, 
-          refresh_token, 
-          expires_at, 
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        ON CONFLICT (organization_id) 
-        DO UPDATE SET 
-          merchant_id = $2,
-          location_id = $3,
-          access_token = $4,
-          refresh_token = $5,
-          expires_at = $6,
-          updated_at = NOW()`,
-          [organizationId, merchant_id, location_id, access_token, refresh_token, expires_at],
-        )
-
-        // Commit transaction
-        await db.query("COMMIT")
-        logger.info("Tokens stored successfully", { organizationId, merchantId: merchant_id, locationId: location_id })
-      } catch (error) {
-        // Rollback transaction on error
-        await db.query("ROLLBACK")
-        throw error
+      // Define interface for location object
+      interface SquareLocation {
+        id: string;
+        name: string;
+        status: string;
+        address?: {
+          address_line_1?: string;
+          locality?: string;
+          administrative_district_level_1?: string;
+        };
+        [key: string]: any;
       }
-    } catch (dbError) {
-      logger.error("Database error storing tokens", { error: dbError })
-      // Continue with the flow even if database storage fails
+
+      if (!locations || locations.length === 0) {
+        logger.warn("No locations found for merchant")
+        return NextResponse.redirect(
+          `${request.nextUrl.origin}/api/square/success?success=false&error=no_locations`
+        )
+      }
+
+      // Filter to only active locations
+      const activeLocations = locations.filter((loc: SquareLocation) => loc.status === "ACTIVE")
+      
+      if (activeLocations.length === 0) {
+        logger.warn("No active locations found for merchant")
+        return NextResponse.redirect(
+          `${request.nextUrl.origin}/api/square/success?success=false&error=no_active_locations`
+        )
+      }
+
+      // Check if merchant has multiple active locations
+      if (activeLocations.length === 1) {
+        // Only one location - auto-select it and proceed normally
+        const singleLocation = activeLocations[0]
+        logger.info("Single location found, auto-selecting", { 
+          location_id: singleLocation.id, 
+          location_name: singleLocation.name 
+        })
+
+        // Store directly in permanent table since there's only one choice
+        try {
+          await db.query("BEGIN")
+
+          // Update pending tokens with location info
+          await db.query(
+            `UPDATE square_pending_tokens SET
+              access_token = $2, 
+              refresh_token = $3, 
+              merchant_id = $4,
+              location_id = $5,
+              expires_at = $6
+            WHERE state = $1`,
+            [state, access_token, refresh_token, merchant_id, singleLocation.id, expires_at]
+          )
+
+          // Store in permanent table
+          await db.query(
+            `INSERT INTO square_connections (
+              organization_id, 
+              merchant_id,
+              location_id,
+              access_token, 
+              refresh_token, 
+              expires_at, 
+              created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (organization_id) 
+            DO UPDATE SET 
+              merchant_id = $2,
+              location_id = $3,
+              access_token = $4,
+              refresh_token = $5,
+              expires_at = $6,
+              updated_at = NOW()`,
+            [organizationId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
+          )
+
+          await db.query("COMMIT")
+          logger.info("Single location setup completed", { 
+            organizationId, 
+            merchantId: merchant_id, 
+            locationId: singleLocation.id,
+            locationName: singleLocation.name
+          })
+
+          // Redirect to success page
+          return NextResponse.redirect(
+            `${request.nextUrl.origin}/api/square/success?success=true&location=${encodeURIComponent(singleLocation.name)}`
+          )
+
+        } catch (error) {
+          await db.query("ROLLBACK")
+          logger.error("Error storing single location", { error })
+          return NextResponse.redirect(
+            `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
+          )
+        }
+      } else {
+        // Multiple locations - need user to select
+        logger.info("Multiple locations found, redirecting to selection", { 
+          locations_count: activeLocations.length 
+        })
+
+        // Store ALL locations in pending tokens for selection
+        try {
+          await db.query(
+            `UPDATE square_pending_tokens SET
+              access_token = $2, 
+              refresh_token = $3, 
+              merchant_id = $4,
+              location_data = $5,
+              expires_at = $6
+            WHERE state = $1`,
+            [
+              state, 
+              access_token, 
+              refresh_token, 
+              merchant_id, 
+              JSON.stringify(activeLocations),
+              expires_at
+            ]
+          )
+
+          logger.info("OAuth completed, awaiting location selection", { 
+            merchant_id, 
+            locations_count: activeLocations.length 
+          })
+
+          // Redirect to location selection page
+          return NextResponse.redirect(
+            `${request.nextUrl.origin}/api/square/location-select?state=${state}&success=true`
+          )
+
+        } catch (error) {
+          logger.error("Error storing location data for selection", { error })
+          return NextResponse.redirect(
+            `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
+          )
+        }
+      }
+
+    } catch (error) {
+      logger.error("Error fetching merchant locations", { error })
+      return NextResponse.redirect(
+        `${request.nextUrl.origin}/api/square/success?success=false&error=location_fetch_failed`
+      )
     }
 
-    // Redirect to success page
-    logger.info("OAuth flow completed successfully", { organizationId, merchantId: merchant_id })
-    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=true`)
   } catch (error) {
     logger.error("Server error during OAuth flow", { error })
     return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=server_error`)
