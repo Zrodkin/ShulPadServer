@@ -1,4 +1,4 @@
-// Complete: src/app/api/square/location-select/route.ts
+// Fixed: src/app/api/square/location-select/route.ts
 
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db"
@@ -145,8 +145,18 @@ export async function POST(request: NextRequest) {
         [organization_id, merchant_id, location_id, access_token, refresh_token, expires_at]
       )
 
-      // Clean up pending tokens
-      await db.query("DELETE FROM square_pending_tokens WHERE state = $1", [state])
+      // CRITICAL FIX: Also update the pending tokens with the final location
+      // This allows the mobile app's polling to find the completed auth
+      await db.query(
+        `UPDATE square_pending_tokens SET
+          access_token = $2, 
+          refresh_token = $3, 
+          merchant_id = $4,
+          location_id = $5,
+          expires_at = $6
+        WHERE state = $1`,
+        [state, access_token, refresh_token, merchant_id, location_id, expires_at]
+      )
 
       await db.query("COMMIT")
 
@@ -157,10 +167,14 @@ export async function POST(request: NextRequest) {
         location_name: selectedLocation.name 
       })
 
+      // Return success with location info for mobile app
       return NextResponse.json({ 
         success: true, 
         location_name: selectedLocation.name,
-        redirect_url: `${request.nextUrl.origin}/api/square/success?success=true&location=${encodeURIComponent(selectedLocation.name)}`
+        location_id: location_id,
+        merchant_id: merchant_id,
+        // Don't redirect immediately - let mobile app polling handle it
+        message: "Location selected successfully"
       })
 
     } catch (dbError) {
@@ -328,19 +342,38 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
             const result = await response.json();
             
             if (result.success) {
-              // Redirect to success page
-              window.location.href = result.redirect_url;
+              // CRITICAL FIX: Don't redirect immediately
+              // Instead, signal success and let the mobile app's polling pick it up
+              console.log('Location selected successfully:', result);
+              
+              // Update the loading message
+              document.getElementById('loading').innerHTML = 
+                '<p>Location selected! Completing setup...</p>';
+              
+              // Try to signal the app directly first
+              try {
+                window.location.href = \`charitypad://oauth-complete?success=true&location=\${encodeURIComponent(result.location_name)}\`;
+              } catch (e) {
+                console.log('Could not signal app directly, polling will handle completion');
+              }
+              
+              // Fallback: After 3 seconds, show success page
+              setTimeout(() => {
+                window.location.href = \`/api/square/success?success=true&location=\${encodeURIComponent(result.location_name)}\`;
+              }, 3000);
+              
             } else {
               alert('Error: ' + (result.error || 'Unknown error'));
               location.reload();
             }
           } catch (error) {
+            console.error('Network error:', error);
             alert('Network error. Please try again.');
             location.reload();
           }
         }
         
-        // Auto-redirect to app after success
+        // Auto-redirect to app after success (keep this as backup)
         setTimeout(() => {
           if (window.location.href.includes('success=true')) {
             window.location.href = "charitypad://oauth-complete?success=true";
