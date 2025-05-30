@@ -145,14 +145,15 @@ export async function POST(request: NextRequest) {
         [organization_id, merchant_id, location_id, access_token, refresh_token, expires_at]
       )
 
-      // CRITICAL FIX: Also update the pending tokens with the final location
-      // This allows the mobile app's polling to find the completed auth
+      // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
+      // This allows iOS polling to find the final state
       await db.query(
         `UPDATE square_pending_tokens SET
           access_token = $2, 
           refresh_token = $3, 
           merchant_id = $4,
           location_id = $5,
+          location_data = NULL,
           expires_at = $6
         WHERE state = $1`,
         [state, access_token, refresh_token, merchant_id, location_id, expires_at]
@@ -173,8 +174,7 @@ export async function POST(request: NextRequest) {
         location_name: selectedLocation.name,
         location_id: location_id,
         merchant_id: merchant_id,
-        // Don't redirect immediately - let mobile app polling handle it
-        message: "Location selected successfully"
+        message: "Location selected successfully - iOS app will detect this automatically"
       })
 
     } catch (dbError) {

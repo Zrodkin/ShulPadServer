@@ -19,23 +19,23 @@ export async function GET(request: NextRequest) {
 
       // Get pending tokens from temporary storage
       const pendingResult = await db.query(
-        "SELECT access_token, refresh_token, merchant_id, location_id, expires_at FROM square_pending_tokens WHERE state = $1",
+        "SELECT access_token, refresh_token, merchant_id, location_id, location_data, expires_at FROM square_pending_tokens WHERE state = $1",
         [state],
       )
 
       if (pendingResult.rows.length > 0) {
         const row = pendingResult.rows[0]
 
-        // If we have tokens, return them
-        if (row.access_token) {
-          // Successfully found pending authorization with tokens
+        // Check if we have tokens AND a specific location_id (final state)
+        if (row.access_token && row.location_id) {
+          // ✅ FINAL STATE: We have tokens and user has selected a location
           const { access_token, refresh_token, merchant_id, location_id, expires_at } = row
 
-         // Mark as obtained instead of deleting immediately
+          // Mark as obtained instead of deleting immediately
           await db.query("UPDATE square_pending_tokens SET obtained = true WHERE state = $1", [state]);
-          logger.info("Found pending authorization", { state, merchantId: merchant_id, locationId: location_id });
+          logger.info("Found completed authorization with location", { state, merchantId: merchant_id, locationId: location_id });
     
-          // Return the tokens
+          // Return the tokens - this is what iOS needs
           return NextResponse.json({
             connected: true,
             access_token,
@@ -44,12 +44,34 @@ export async function GET(request: NextRequest) {
             location_id,
             expires_at,
           })
-        } else {
-          // We found the state but no tokens yet
+        } 
+        // Check if we have tokens but multiple locations (needs user selection)
+        else if (row.access_token && row.location_data) {
+          // ✅ INTERMEDIATE STATE: We have tokens but user needs to select location
+          logger.debug("Found pending authorization with multiple locations", { state })
+          
+          let locations = []
+          try {
+            locations = JSON.parse(row.location_data)
+          } catch (e) {
+            logger.error("Failed to parse location_data", { error: e, state })
+          }
+          
+          return NextResponse.json({
+            connected: false,
+            message: "location_selection_required",
+            merchant_id: row.merchant_id,
+            locations: locations,
+            // Include enough info for location selection
+            selection_url: `/api/square/location-select?state=${state}`,
+          })
+        }
+        // We have the state but no tokens yet (still in OAuth flow)
+        else {
           logger.debug("Found pending state but no tokens yet", { state })
           return NextResponse.json({
             connected: false,
-            message: "token_not_found",
+            message: "authorization_in_progress",
           })
         }
       } else {
@@ -57,12 +79,12 @@ export async function GET(request: NextRequest) {
         logger.debug("No pending authorization found for state", { state })
         return NextResponse.json({
           connected: false,
-          message: "token_not_found",
+          message: "invalid_state",
         })
       }
     }
 
-    // Path 2: Checking by organization ID
+    // Path 2: Checking by organization ID (normal status check)
     else if (organizationId) {
       logger.debug("Checking authorization status by organization ID", { organizationId })
 
@@ -113,6 +135,9 @@ export async function GET(request: NextRequest) {
           merchant_id,
           location_id,
           expires_at: expires_at,
+          // ✅ IMPORTANT: Include access_token for iOS app
+          access_token,
+          refresh_token,
         })
       } catch (apiError) {
         logger.error("API error checking token", { error: apiError, organizationId })
