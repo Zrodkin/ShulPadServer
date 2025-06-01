@@ -278,8 +278,31 @@ function checkRateLimit(organizationId: string): RateLimitResult {
 }
 
 // ✅ FIXED: Added proper error handling with try/catch
+// ✅ FIXED: Handle "default" organization without database query
 async function getOrganizationSettings(db: any, organizationId: string): Promise<OrganizationSettings | null> {
   try {
+    // 🔧 HANDLE "default" organization specially (no database query needed)
+    if (organizationId === "default") {
+      // Return hardcoded settings for the default organization
+      return {
+        id: "default",
+        name: "Your Organization", 
+        tax_id: "12-3456789",
+        receipt_message: "Thank you for your generous donation!",
+        logo_url: undefined,
+        contact_email: undefined,
+        website: undefined,
+        receipt_enabled: true
+      }
+    }
+
+    // For numeric organization IDs, query the database
+    const numericOrgId = parseInt(organizationId)
+    if (isNaN(numericOrgId)) {
+      logger.error("Invalid organization ID format", { organizationId })
+      return null
+    }
+
     const result = await db.query(
       `SELECT 
         o.id,
@@ -292,16 +315,17 @@ async function getOrganizationSettings(db: any, organizationId: string): Promise
         COALESCE(o.receipt_enabled, true) as receipt_enabled
       FROM organizations o
       WHERE o.id = $1`,
-      [organizationId]
+      [numericOrgId]  // Use the parsed integer
     )
 
     if (result.rows.length === 0) {
+      logger.warn("Organization not found in database", { organizationId: numericOrgId })
       return null
     }
 
     const row = result.rows[0]
     return {
-      id: row.id,
+      id: row.id.toString(), // Convert back to string for consistency
       name: row.name || "Your Organization",
       tax_id: row.tax_id || "",
       receipt_message: row.receipt_message || "Thank you for your generous donation!",
