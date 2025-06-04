@@ -19,6 +19,9 @@ interface SendReceiptRequest {
   transaction_id?: string;
   order_id?: string;
   payment_date?: string;
+  organization_name?: string;
+  organization_tax_id?: string;
+  organization_receipt_message?: string;
 }
 
 interface OrganizationSettings {
@@ -125,38 +128,44 @@ export async function POST(request: NextRequest) {
       }, { status: 429 })
     }
 
-    // Get organization settings with better error handling
-    const orgSettings = await getOrganizationSettings(db, organization_id)
-    if (!orgSettings) {
-      logger.error("Organization not found or not configured", { organization_id })
-      return NextResponse.json({ error: "Organization not found or not properly configured" }, { status: 404 })
-    }
+// Get organization settings with better error handling
+const orgSettings = await getOrganizationSettings(db, organization_id, {
+  organization_name: body.organization_name,
+  organization_tax_id: body.organization_tax_id, 
+  organization_receipt_message: body.organization_receipt_message
+})
 
-    if (!orgSettings.receipt_enabled) {
-      logger.warn("Receipt sending disabled for organization", { organization_id })
-      return NextResponse.json({ error: "Receipt sending is disabled for this organization" }, { status: 403 })
-    }
+// ✅ FIX: Add null check here
+if (!orgSettings) {
+  logger.error("Organization not found or not configured", { organization_id })
+  return NextResponse.json({ error: "Organization not found or not properly configured" }, { status: 404 })
+}
 
-    // Create receipt log entry (for tracking)
-    receiptLogId = await createReceiptLogEntry(db, {
-      organization_id,
-      donor_email,
-      amount,
-      transaction_id,
-      order_id
-    })
+if (!orgSettings.receipt_enabled) {
+  logger.warn("Receipt sending disabled for organization", { organization_id })
+  return NextResponse.json({ error: "Receipt sending is disabled for this organization" }, { status: 403 })
+}
 
-    // Generate receipt content
-    const receiptData = generateReceiptData(orgSettings, {
-      amount,
-      transaction_id,
-      order_id,
-      payment_date,
-      donor_email
-    })
+// Create receipt log entry (for tracking)
+receiptLogId = await createReceiptLogEntry(db, {
+  organization_id,
+  donor_email,
+  amount,
+  transaction_id,
+  order_id
+})
 
-    // Send email with retry logic
-    const emailResult = await sendReceiptEmail(receiptData, orgSettings)
+// Generate receipt content - now TypeScript knows orgSettings is not null
+const receiptData = generateReceiptData(orgSettings, {
+  amount,
+  transaction_id,
+  order_id,
+  payment_date,
+  donor_email
+})
+
+// Send email with retry logic - now TypeScript knows orgSettings is not null
+const emailResult = await sendReceiptEmail(receiptData, orgSettings)
     
     if (emailResult.success) {
       // Update receipt log with success
@@ -277,65 +286,44 @@ function checkRateLimit(organizationId: string): RateLimitResult {
   return { allowed: true, resetTime: existing.resetTime }
 }
 
-// ✅ FIXED: Added proper error handling with try/catch
-// ✅ FIXED: Handle "default" organization without database query
-async function getOrganizationSettings(db: any, organizationId: string): Promise<OrganizationSettings | null> {
+// ✅ COMPLETELY REPLACED: Use settings from iOS app instead of database
+// Replace the getOrganizationSettings function in route.ts with this:
+
+async function getOrganizationSettings(
+  db: any, 
+  organizationId: string, 
+  providedSettings?: {
+    organization_name?: string;
+    organization_tax_id?: string;
+    organization_receipt_message?: string;
+  }
+): Promise<OrganizationSettings | null> {
   try {
-    // 🔧 HANDLE "default" organization specially (no database query needed)
-    if (organizationId === "default") {
-      // Return hardcoded settings for the default organization
-      return {
-        id: "default",
-        name: "Your Organization", 
-        tax_id: "12-3456789",
-        receipt_message: "Thank you for your generous donation!",
-        logo_url: undefined,
-        contact_email: undefined,
-        website: undefined,
-        receipt_enabled: true
-      }
-    }
-
-    // For numeric organization IDs, query the database
-    const numericOrgId = parseInt(organizationId)
-    if (isNaN(numericOrgId)) {
-      logger.error("Invalid organization ID format", { organizationId })
+    // 🎯 WHITE-LABEL SOLUTION: REQUIRE organization settings from iOS app
+    console.log("📧 Checking provided settings:", providedSettings)
+    
+    // ✅ Organization settings MUST be provided for white-label app
+    if (!providedSettings || !providedSettings.organization_name) {
+      console.log("❌ No organization settings provided - this is required for white-label")
+      logger.error("Organization settings not provided in request", { organizationId, providedSettings })
       return null
     }
 
-    const result = await db.query(
-      `SELECT 
-        o.id,
-        o.name, 
-        o.tax_id, 
-        o.receipt_message, 
-        o.logo_url, 
-        o.contact_email, 
-        o.website,
-        COALESCE(o.receipt_enabled, true) as receipt_enabled
-      FROM organizations o
-      WHERE o.id = $1`,
-      [numericOrgId]  // Use the parsed integer
-    )
-
-    if (result.rows.length === 0) {
-      logger.warn("Organization not found in database", { organizationId: numericOrgId })
-      return null
-    }
-
-    const row = result.rows[0]
+    console.log("✅ Using provided organization settings:", providedSettings)
+    
     return {
-      id: row.id.toString(), // Convert back to string for consistency
-      name: row.name || "Your Organization",
-      tax_id: row.tax_id || "",
-      receipt_message: row.receipt_message || "Thank you for your generous donation!",
-      logo_url: row.logo_url,
-      contact_email: row.contact_email,
-      website: row.website,
-      receipt_enabled: row.receipt_enabled
+      id: organizationId,
+      name: providedSettings.organization_name,
+      tax_id: providedSettings.organization_tax_id || "",
+      receipt_message: providedSettings.organization_receipt_message || "Thank you for your generous donation!",
+      logo_url: undefined,
+      contact_email: undefined,
+      website: undefined,
+      receipt_enabled: true
     }
+    
   } catch (error) {
-    logger.error("Database error getting organization settings", { error, organizationId })
+    logger.error("Error processing organization settings", { error, organizationId })
     return null
   }
 }
