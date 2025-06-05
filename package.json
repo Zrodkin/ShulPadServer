@@ -12,7 +12,6 @@
     "migrate:all": "npm run init-db && npm run migrate:preset-donations"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.0",
     "@sendgrid/mail": "^8.1.5",
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",

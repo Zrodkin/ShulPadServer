@@ -1,6 +1,6 @@
 // src/app/api/receipts/send/route.ts
 import { NextResponse, type NextRequest } from "next/server"
-import { sql } from "@/lib/db"
+import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import sgMail from '@sendgrid/mail'
 
@@ -11,7 +11,7 @@ if (!process.env.SENDGRID_API_KEY) {
 }
 sgMail.setApiKey(process.env.SENDGRID_API_KEY)
 
-// TypeScript interfaces
+// ✅ FIXED: Added proper TypeScript interfaces
 interface SendReceiptRequest {
   organization_id: string;
   donor_email: string;
@@ -79,6 +79,7 @@ const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minute
 const RATE_LIMIT_MAX = 10 // Max 10 emails per minute per org
 
 export async function POST(request: NextRequest) {
+  const db = createClient()
   let receiptLogId: number | null = null
 
   try {
@@ -127,78 +128,48 @@ export async function POST(request: NextRequest) {
       }, { status: 429 })
     }
 
-    // Get organization settings from iOS app data
-    const orgSettings = await getOrganizationSettings(organization_id, {
-      organization_name: body.organization_name,
-      organization_tax_id: body.organization_tax_id, 
-      organization_receipt_message: body.organization_receipt_message
-    })
+// Get organization settings with better error handling
+const orgSettings = await getOrganizationSettings(db, organization_id, {
+  organization_name: body.organization_name,
+  organization_tax_id: body.organization_tax_id, 
+  organization_receipt_message: body.organization_receipt_message
+})
 
-    if (!orgSettings) {
-      logger.error("Organization not found or not configured", { organization_id })
-      return NextResponse.json({ error: "Organization not found or not properly configured" }, { status: 404 })
-    }
+// ✅ FIX: Add null check here
+if (!orgSettings) {
+  logger.error("Organization not found or not configured", { organization_id })
+  return NextResponse.json({ error: "Organization not found or not properly configured" }, { status: 404 })
+}
 
-    if (!orgSettings.receipt_enabled) {
-      logger.warn("Receipt sending disabled for organization", { organization_id })
-      return NextResponse.json({ error: "Receipt sending is disabled for this organization" }, { status: 403 })
-    }
+if (!orgSettings.receipt_enabled) {
+  logger.warn("Receipt sending disabled for organization", { organization_id })
+  return NextResponse.json({ error: "Receipt sending is disabled for this organization" }, { status: 403 })
+}
 
-    // Create receipt log entry with Neon SQL
-    try {
-      const logResult = await sql`
-        INSERT INTO receipt_log (
-          organization_id, 
-          donor_email, 
-          amount, 
-          transaction_id, 
-          order_id,
-          delivery_status,
-          requested_at
-        ) VALUES (
-          ${organization_id}, 
-          ${donor_email}, 
-          ${amount}, 
-          ${transaction_id || null}, 
-          ${order_id || null},
-          'pending', 
-          NOW()
-        )
-        RETURNING id
-      `
-      
-      receiptLogId = logResult[0].id
-    } catch (dbError) {
-      logger.error("Database error creating receipt log", { error: dbError, organization_id })
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
-    }
+// Create receipt log entry (for tracking)
+receiptLogId = await createReceiptLogEntry(db, {
+  organization_id,
+  donor_email,
+  amount,
+  transaction_id,
+  order_id
+})
 
-    // Generate receipt content
-    const receiptData = generateReceiptData(orgSettings, {
-      amount,
-      transaction_id,
-      order_id,
-      payment_date,
-      donor_email
-    })
+// Generate receipt content - now TypeScript knows orgSettings is not null
+const receiptData = generateReceiptData(orgSettings, {
+  amount,
+  transaction_id,
+  order_id,
+  payment_date,
+  donor_email
+})
 
-    // Send email
-    const emailResult = await sendReceiptEmail(receiptData, orgSettings)
-        
+// Send email with retry logic - now TypeScript knows orgSettings is not null
+const emailResult = await sendReceiptEmail(receiptData, orgSettings)
+    
     if (emailResult.success) {
       // Update receipt log with success
-      try {
-        await sql`
-          UPDATE receipt_log 
-          SET delivery_status = 'sent', 
-              sent_at = NOW(), 
-              sendgrid_message_id = ${emailResult.messageId || null},
-              updated_at = NOW()
-          WHERE id = ${receiptLogId}
-        `
-      } catch (updateError) {
-        logger.warn("Failed to update receipt log with success", { error: updateError, receiptLogId })
-      }
+      await updateReceiptLogSuccess(db, receiptLogId, emailResult.messageId!)
       
       logger.info("Receipt sent successfully", { 
         organization_id, 
@@ -216,19 +187,7 @@ export async function POST(request: NextRequest) {
       })
     } else {
       // Update receipt log with failure
-      try {
-        await sql`
-          UPDATE receipt_log 
-          SET delivery_status = 'failed', 
-              delivery_error = ${emailResult.error || 'Unknown error'},
-              retry_count = retry_count + 1,
-              last_retry_at = NOW(),
-              updated_at = NOW()
-          WHERE id = ${receiptLogId}
-        `
-      } catch (updateError) {
-        logger.warn("Failed to update receipt log with failure", { error: updateError, receiptLogId })
-      }
+      await updateReceiptLogFailure(db, receiptLogId, emailResult.error!)
       
       logger.error("Failed to send receipt", { 
         organization_id, 
@@ -254,15 +213,7 @@ export async function POST(request: NextRequest) {
     // Update receipt log with failure if we have an ID
     if (receiptLogId) {
       try {
-        await sql`
-          UPDATE receipt_log 
-          SET delivery_status = 'failed', 
-              delivery_error = ${error.message},
-              retry_count = retry_count + 1,
-              last_retry_at = NOW(),
-              updated_at = NOW()
-          WHERE id = ${receiptLogId}
-        `
+        await updateReceiptLogFailure(db, receiptLogId, error.message)
       } catch (updateError) {
         logger.error("Failed to update receipt log with error", { 
           updateError, 
@@ -275,10 +226,16 @@ export async function POST(request: NextRequest) {
       error: "Internal server error",
       receipt_id: receiptLogId
     }, { status: 500 })
+  } finally {
+    try {
+      await db.end()
+    } catch (dbCloseError) {
+      logger.warn("Error closing database connection", { error: dbCloseError })
+    }
   }
 }
 
-// Validation function
+// ✅ FIXED: Added explicit return type
 function validateReceiptRequest(body: SendReceiptRequest): ValidationResult {
   const errors: string[] = []
 
@@ -307,7 +264,7 @@ function validateReceiptRequest(body: SendReceiptRequest): ValidationResult {
   return { valid: errors.length === 0, errors }
 }
 
-// Rate limiting function
+// ✅ FIXED: Added explicit return type
 function checkRateLimit(organizationId: string): RateLimitResult {
   const now = Date.now()
   const key = `receipt_${organizationId}`
@@ -329,8 +286,11 @@ function checkRateLimit(organizationId: string): RateLimitResult {
   return { allowed: true, resetTime: existing.resetTime }
 }
 
-// Get organization settings from iOS app request data (white-label approach)
+// ✅ COMPLETELY REPLACED: Use settings from iOS app instead of database
+// Replace the getOrganizationSettings function in route.ts with this:
+
 async function getOrganizationSettings(
+  db: any, 
   organizationId: string, 
   providedSettings?: {
     organization_name?: string;
@@ -339,9 +299,10 @@ async function getOrganizationSettings(
   }
 ): Promise<OrganizationSettings | null> {
   try {
+    // 🎯 WHITE-LABEL SOLUTION: REQUIRE organization settings from iOS app
     console.log("📧 Checking provided settings:", providedSettings)
     
-    // Organization settings MUST be provided for white-label app
+    // ✅ Organization settings MUST be provided for white-label app
     if (!providedSettings || !providedSettings.organization_name) {
       console.log("❌ No organization settings provided - this is required for white-label")
       logger.error("Organization settings not provided in request", { organizationId, providedSettings })
@@ -367,7 +328,74 @@ async function getOrganizationSettings(
   }
 }
 
-// Generate receipt data
+// ✅ FIXED: Added proper error handling with try/catch
+async function createReceiptLogEntry(db: any, data: {
+  organization_id: string;
+  donor_email: string;
+  amount: number;
+  transaction_id?: string;
+  order_id?: string;
+}): Promise<number> {
+  try {
+    const result = await db.query(
+      `INSERT INTO receipt_log (
+        organization_id, 
+        donor_email, 
+        amount, 
+        transaction_id, 
+        order_id,
+        delivery_status,
+        requested_at
+      ) VALUES ($1, $2, $3, $4, $5, 'pending', NOW())
+      RETURNING id`,
+      [data.organization_id, data.donor_email, data.amount, data.transaction_id, data.order_id]
+    )
+    
+    return result.rows[0].id
+  } catch (error) {
+    logger.error("Database error creating receipt log entry", { error, data })
+    throw error
+  }
+}
+
+// ✅ FIXED: Added proper error handling with try/catch
+async function updateReceiptLogSuccess(db: any, receiptLogId: number, messageId: string): Promise<void> {
+  try {
+    await db.query(
+      `UPDATE receipt_log 
+       SET delivery_status = 'sent', 
+           sent_at = NOW(), 
+           sendgrid_message_id = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [messageId, receiptLogId]
+    )
+  } catch (error) {
+    logger.error("Database error updating receipt log success", { error, receiptLogId, messageId })
+    throw error
+  }
+}
+
+// ✅ FIXED: Added proper error handling with try/catch
+async function updateReceiptLogFailure(db: any, receiptLogId: number, error: string): Promise<void> {
+  try {
+    await db.query(
+      `UPDATE receipt_log 
+       SET delivery_status = 'failed', 
+           delivery_error = $1,
+           retry_count = retry_count + 1,
+           last_retry_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2`,
+      [error, receiptLogId]
+    )
+  } catch (dbError) {
+    logger.error("Database error updating receipt log failure", { error: dbError, receiptLogId, originalError: error })
+    throw dbError
+  }
+}
+
+// ✅ FIXED: Added proper typing and return type
 function generateReceiptData(orgSettings: OrganizationSettings, donationData: any): ReceiptData {
   return {
     organization: {
@@ -396,19 +424,19 @@ function generateReceiptData(orgSettings: OrganizationSettings, donationData: an
   }
 }
 
-// Send receipt email via SendGrid
+// ✅ FIXED: Added proper return type
 async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: OrganizationSettings): Promise<EmailResult> {
   try {
     const htmlContent = generateReceiptHTML(receiptData)
-    const textContent = generateReceiptText(receiptData)
+    const textContent = generateReceiptText(receiptData) // ✅ This function is now defined below
 
     const msg = {
       to: receiptData.donor.email,
       from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com',
-        name: receiptData.organization.name || 'ShulPad'
+        email: process.env.SENDGRID_FROM_EMAIL || 'noreply@shulpad.com',
+        name: `${orgSettings.name} via ShulPad`
       },
-      subject: `Thank You For Your Donation to ${receiptData.organization.name}!`,
+      subject: `Donation Receipt - ${orgSettings.name}`,
       text: textContent,
       html: htmlContent,
       categories: ['donation-receipt'],
@@ -417,6 +445,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
         transaction_id: receiptData.donation.transactionId,
         amount: receiptData.donation.amount.toString()
       },
+      // Add tracking
       trackingSettings: {
         clickTracking: { enable: false },
         openTracking: { enable: true },
@@ -425,7 +454,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
     }
 
     const response = await sgMail.send(msg)
-    const messageId = response[0].headers['x-message-id'] as string
+    const messageId = response[0].headers['x-message-id']
     
     return { success: true, messageId }
   } catch (sendGridError: any) {
@@ -441,8 +470,9 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
   }
 }
 
-// Generate professional HTML receipt - Email client compatible
+// ✅ FIXED: Added explicit return type
 function generateReceiptHTML(data: ReceiptData): string {
+  // Escape HTML to prevent XSS (server-side safe version)
   const escapeHtml = (text: string): string => {
     return text
       .replace(/&/g, "&amp;")
@@ -455,166 +485,155 @@ function generateReceiptHTML(data: ReceiptData): string {
   const safeOrgName = escapeHtml(data.organization.name)
   const safeMessage = escapeHtml(data.organization.message)
   const safeTaxId = escapeHtml(data.organization.taxId)
-  
-  // Format date as "June 4th, 2025" style
-  const formatDateWithOrdinal = (dateStr: string): string => {
-    const date = new Date(dateStr)
-    const day = date.getDate()
-    const month = date.toLocaleDateString('en-US', { month: 'long' })
-    const year = date.getFullYear()
-    
-    const getOrdinalSuffix = (day: number): string => {
-      if (day > 3 && day < 21) return 'th'
-      switch (day % 10) {
-        case 1: return 'st'
-        case 2: return 'nd'
-        case 3: return 'rd'
-        default: return 'th'
-      }
-    }
-    
-    return `${month} ${day}${getOrdinalSuffix(day)}, ${year}`
-  }
-
-  const formattedDate = formatDateWithOrdinal(data.donation.date)
+  const safeTransactionId = escapeHtml(data.donation.transactionId)
+  const safeOrderId = data.donation.orderId ? escapeHtml(data.donation.orderId) : null
 
   return `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-      <title>Thank You For Your Donation!</title>
-      <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-      <style type="text/css">
-        /* Email client reset */
-        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-        table, td { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
-        img { -ms-interpolation-mode: bicubic; }
-        
-        /* Basic styling */
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Donation Receipt</title>
+      <style>
         body {
-          margin: 0 !important;
-          padding: 0 !important;
-          font-family: Arial, sans-serif;
-          background-color: #f4f4f4;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+          background-color: #f8f9fa;
         }
-        
-        /* Mobile responsive */
-        @media screen and (max-width: 600px) {
-          .mobile-center { text-align: center !important; }
-          .mobile-padding { padding: 15px !important; }
-          .mobile-font { font-size: 16px !important; }
+        .email-container {
+          background-color: white;
+          border-radius: 8px;
+          padding: 30px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+          text-align: center;
+          border-bottom: 2px solid #4CAF50;
+          padding-bottom: 20px;
+          margin-bottom: 30px;
+        }
+        .logo {
+          max-width: 120px;
+          height: auto;
+          margin-bottom: 15px;
+        }
+        .org-name {
+          font-size: 24px;
+          font-weight: bold;
+          color: #2c3e50;
+          margin: 10px 0;
+        }
+        .receipt-title {
+          font-size: 18px;
+          color: #4CAF50;
+          font-weight: bold;
+          margin: 20px 0;
+        }
+        .receipt-details {
+          background: #f8f9fa;
+          padding: 20px;
+          border-radius: 8px;
+          margin: 20px 0;
+        }
+        .detail-row {
+          display: flex;
+          justify-content: space-between;
+          margin: 10px 0;
+          padding: 8px 0;
+          border-bottom: 1px solid #eee;
+        }
+        .detail-row:last-child {
+          border-bottom: none;
+          font-weight: bold;
+          font-size: 18px;
+          color: #4CAF50;
+        }
+        .message {
+          background: #e8f5e9;
+          padding: 20px;
+          border-radius: 8px;
+          border-left: 4px solid #4CAF50;
+          margin: 20px 0;
+        }
+        .footer {
+          text-align: center;
+          font-size: 12px;
+          color: #666;
+          margin-top: 30px;
+          padding-top: 20px;
+          border-top: 1px solid #eee;
+        }
+        .tax-info {
+          background: #fff3cd;
+          border: 1px solid #ffeaa7;
+          padding: 15px;
+          border-radius: 5px;
+          margin: 20px 0;
         }
       </style>
     </head>
-    <body style="margin: 0; padding: 0; background-color: #f4f4f4;">
-      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="min-width: 100%;">
-        <tr>
-          <td align="center" style="padding: 20px;">
-            
-            <!-- Main container -->
-            <table border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-              
-              <!-- Header -->
-              <tr>
-                <td align="center" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 40px 20px;">
-                  <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold; text-align: center;">
-                    ❤️ Thank You For Your Donation!
-                  </h1>
-                </td>
-              </tr>
-              
-              <!-- Organization name -->
-              <tr>
-                <td align="center" style="padding: 30px 20px 20px;">
-                  <h2 style="margin: 0; color: #028383; font-size: 24px; font-weight: normal; text-align: center;">
-                    ${safeOrgName}
-                  </h2>
-                </td>
-              </tr>
-              
-              <!-- Receipt details -->
-              <tr>
-                <td style="padding: 0 20px 20px;">
-                  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8f9fa; border-radius: 8px; overflow: hidden;">
-                    
-                    <!-- Details header -->
-                    <tr>
-                      <td colspan="2" style="background-color: #d7f1ff; padding: 15px 20px;">
-                        <h3 style="margin: 0; color: #0066cc; font-size: 18px; font-weight: bold;">Receipt Details</h3>
-                      </td>
-                    </tr>
-                    
-                    <!-- Date row -->
-                    <tr>
-                      <td style="padding: 15px 20px; border-bottom: 1px solid #e9ecef; color: #666; font-weight: 500;">Date</td>
-                      <td style="padding: 15px 20px; border-bottom: 1px solid #e9ecef; color: #2c3e50; font-weight: 600; text-align: right;">${formattedDate}</td>
-                    </tr>
-                    
-                    <!-- Organization row -->
-                    <tr>
-                      <td style="padding: 15px 20px; border-bottom: 1px solid #e9ecef; color: #666; font-weight: 500;">Organization</td>
-                      <td style="padding: 15px 20px; border-bottom: 1px solid #e9ecef; color: #2c3e50; font-weight: 600; text-align: right;">${safeOrgName}</td>
-                    </tr>
-                    
-                    ${safeTaxId ? `
-                    <!-- Tax ID row -->
-                    <tr>
-                      <td style="padding: 15px 20px; border-bottom: 1px solid #e9ecef; color: #666; font-weight: 500;">Tax ID</td>
-                      <td style="padding: 15px 20px; border-bottom: 1px solid #e9ecef; color: #2c3e50; font-weight: 600; text-align: right;">${safeTaxId}</td>
-                    </tr>
-                    ` : ''}
-                    
-                    <!-- Amount row -->
-                    <tr>
-                      <td style="padding: 15px 20px; color: #666; font-weight: 500;">Donation Amount</td>
-                      <td style="padding: 15px 20px; color: #4facfe; font-weight: 800; font-size: 20px; text-align: right;">${data.donation.formattedAmount}</td>
-                    </tr>
-                    
-                  </table>
-                </td>
-              </tr>
-              
-              <!-- Thank you message -->
-              <tr>
-                <td style="padding: 20px;">
-                  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 8px;">
-                    <tr>
-                      <td style="padding: 25px; text-align: center;">
-                        <p style="margin: 0; color: #155724; font-size: 16px; font-weight: 500; line-height: 1.5;">
-                          ${safeMessage}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              
-              <!-- Footer -->
-              <tr>
-                <td style="padding: 20px; background-color: #f8f9fa; text-align: center; border-top: 1px solid #e9ecef;">
-                  <p style="margin: 0 0 10px 0; font-size: 14px; color: #6c757d; line-height: 1.4;">
-                    Please keep this receipt for your tax records.
-                  </p>
-                  <p style="margin: 0; font-size: 12px; color: #adb5bd;">
-                    Powered by ShulPad
-                  </p>
-                </td>
-              </tr>
-              
-            </table>
-            
-          </td>
-        </tr>
-      </table>
+    <body>
+      <div class="email-container">
+        <div class="header">
+          ${data.organization.logoUrl ? `<img src="${data.organization.logoUrl}" alt="Logo" class="logo">` : ''}
+          <div class="org-name">${safeOrgName}</div>
+          <div class="receipt-title">DONATION RECEIPT</div>
+        </div>
+
+        <div class="receipt-details">
+          <div class="detail-row">
+            <span>Date:</span>
+            <span>${data.donation.date}</span>
+          </div>
+          <div class="detail-row">
+            <span>Transaction ID:</span>
+            <span>${safeTransactionId}</span>
+          </div>
+          ${safeOrderId ? `
+          <div class="detail-row">
+            <span>Order ID:</span>
+            <span>${safeOrderId}</span>
+          </div>
+          ` : ''}
+          <div class="detail-row">
+            <span>Donation Amount:</span>
+            <span>${data.donation.formattedAmount}</span>
+          </div>
+        </div>
+
+        ${safeTaxId ? `
+        <div class="tax-info">
+          <strong>Tax Information:</strong><br>
+          This donation was made to ${safeOrgName}<br>
+          Tax ID (EIN): ${safeTaxId}<br>
+          Keep this receipt for your tax records.
+        </div>
+        ` : ''}
+
+        <div class="message">
+          ${safeMessage}
+        </div>
+
+        <div class="footer">
+          <p>This receipt was generated automatically.</p>
+          ${data.organization.contactEmail ? `<p>Questions? Contact us at ${data.organization.contactEmail}</p>` : ''}
+          ${data.organization.website ? `<p>Visit us: ${data.organization.website}</p>` : ''}
+          <p>Powered by CharityPad</p>
+        </div>
+      </div>
     </body>
     </html>
   `
 }
 
-// Generate plain text receipt
+// ✅ FIXED: Added the missing generateReceiptText function
 function generateReceiptText(data: ReceiptData): string {
+  // Helper function to clean text for plain text email (remove HTML entities, etc.)
   const cleanText = (text: string): string => {
     return text
       .replace(/&amp;/g, "&")
@@ -625,47 +644,55 @@ function generateReceiptText(data: ReceiptData): string {
       .trim()
   }
 
-  const formatDateWithOrdinal = (dateStr: string): string => {
-    const date = new Date(dateStr)
-    const day = date.getDate()
-    const month = date.toLocaleDateString('en-US', { month: 'long' })
-    const year = date.getFullYear()
-    
-    const getOrdinalSuffix = (day: number): string => {
-      if (day > 3 && day < 21) return 'th'
-      switch (day % 10) {
-        case 1: return 'st'
-        case 2: return 'nd'
-        case 3: return 'rd'
-        default: return 'th'
-      }
-    }
-    
-    return `${month} ${day}${getOrdinalSuffix(day)}, ${year}`
-  }
-
-  const formattedDate = formatDateWithOrdinal(data.donation.date)
-
   const lines: string[] = []
   
-  lines.push("THANK YOU FOR YOUR DONATION!")
-  lines.push("=" + "=".repeat(31))
+  // Header
+  lines.push("DONATION RECEIPT")
+  lines.push("=" + "=".repeat(47))
   lines.push("")
-  lines.push(`Date: ${formattedDate}`)
-  lines.push(`Organization: ${cleanText(data.organization.name)}`)
+  lines.push(cleanText(data.organization.name))
+  lines.push("")
+  
+  // Receipt details
+  lines.push("Receipt Details:")
+  lines.push("-".repeat(20))
+  lines.push(`Date: ${data.donation.date}`)
+  lines.push(`Transaction ID: ${data.donation.transactionId}`)
+  
+  if (data.donation.orderId) {
+    lines.push(`Order ID: ${data.donation.orderId}`)
+  }
+  
+  lines.push(`Donation Amount: ${data.donation.formattedAmount}`)
+  lines.push("")
+  
+  // Tax information
   if (data.organization.taxId) {
-    lines.push(`Tax ID: ${cleanText(data.organization.taxId)}`)
+    lines.push("Tax Information:")
+    lines.push("-".repeat(20))
+    lines.push(`This donation was made to ${cleanText(data.organization.name)}`)
+    lines.push(`Tax ID (EIN): ${data.organization.taxId}`)
+    lines.push("Keep this receipt for your tax records.")
+    lines.push("")
   }
-  lines.push(`Amount: ${data.donation.formattedAmount}`)
-  if (data.donation.transactionId) {
-    lines.push(`Transaction ID: ${data.donation.transactionId}`)
-  }
-  lines.push("")
+  
+  // Message
   lines.push(cleanText(data.organization.message))
   lines.push("")
-  lines.push("Please keep this receipt for your tax records.")
-  lines.push("")
-  lines.push("Powered by ShulPad")
+  
+  // Footer
+  lines.push("-".repeat(48))
+  lines.push("This receipt was generated automatically.")
+  
+  if (data.organization.contactEmail) {
+    lines.push(`Questions? Contact us at ${data.organization.contactEmail}`)
+  }
+  
+  if (data.organization.website) {
+    lines.push(`Visit us: ${data.organization.website}`)
+  }
+  
+  lines.push("Powered by CharityPad")
   
   return lines.join("\n")
 }
