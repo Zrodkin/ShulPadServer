@@ -1,7 +1,7 @@
 // src/app/api/receipts/send/route.ts
 import { NextResponse, type NextRequest } from "next/server"
-import { createClient } from "@/lib/db"
-import { logger } from "@/lib/logger"
+import { createClient } from "@/lib/db" // Assuming this is your DB client setup
+import { logger } from "@/lib/logger" // Assuming this is your logger setup
 import sgMail from '@sendgrid/mail'
 
 // Initialize SendGrid with error handling
@@ -16,8 +16,8 @@ interface SendReceiptRequest {
   organization_id: string;
   donor_email: string;
   amount: number;
-  transaction_id?: string;
-  order_id?: string;
+  transaction_id?: string; // Kept for logging, but not displayed on new receipt
+  order_id?: string;       // Kept for logging, but not displayed on new receipt
   payment_date?: string;
   organization_name?: string;
   organization_tax_id?: string;
@@ -47,8 +47,8 @@ interface ReceiptData {
   donation: {
     amount: number;
     formattedAmount: string;
-    transactionId: string;
-    orderId?: string;
+    transactionId: string; // Used for SendGrid customArgs, not displayed
+    orderId?: string;       // Not displayed
     date: string;
     year: number;
   };
@@ -157,8 +157,8 @@ export async function POST(request: NextRequest) {
     // Generate receipt content
     const receiptData = generateReceiptData(orgSettings, {
       amount,
-      transaction_id,
-      order_id,
+      transaction_id, // Pass for logging/customArgs if needed
+      order_id,       // Pass for logging/customArgs if needed
       payment_date,
       donor_email
     })
@@ -168,13 +168,15 @@ export async function POST(request: NextRequest) {
     
     if (emailResult.success) {
       // Update receipt log with success
-      await updateReceiptLogSuccess(db, receiptLogId, emailResult.messageId!)
+      if (receiptLogId !== null) {
+        await updateReceiptLogSuccess(db, receiptLogId, emailResult.messageId!)
+      }
       
       logger.info("Receipt sent successfully", { 
         organization_id, 
         donor_email, 
         amount, 
-        transaction_id,
+        transaction_id, // Logged, not displayed
         message_id: emailResult.messageId,
         receipt_log_id: receiptLogId
       })
@@ -186,7 +188,9 @@ export async function POST(request: NextRequest) {
       })
     } else {
       // Update receipt log with failure
-      await updateReceiptLogFailure(db, receiptLogId, emailResult.error!)
+      if (receiptLogId !== null) {
+        await updateReceiptLogFailure(db, receiptLogId, emailResult.error!)
+      }
       
       logger.error("Failed to send receipt", { 
         organization_id, 
@@ -210,7 +214,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Update receipt log with failure if we have an ID
-    if (receiptLogId) {
+    if (receiptLogId !== null) {
       try {
         await updateReceiptLogFailure(db, receiptLogId, error.message)
       } catch (updateError) {
@@ -227,7 +231,10 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   } finally {
     try {
-      await db.end()
+      // Ensure db.end is only called if db client was initialized successfully
+      if (db && typeof db.end === 'function') {
+        await db.end()
+      }
     } catch (dbCloseError) {
       logger.warn("Error closing database connection", { error: dbCloseError })
     }
@@ -255,10 +262,23 @@ function validateReceiptRequest(body: SendReceiptRequest): ValidationResult {
     errors.push("amount is required and must be a positive number")
   }
 
-  // Validate amount is reasonable (not too large)
-  if (body.amount && body.amount > 1000000) {
+  if (body.amount && body.amount > 1000000) { // Example reasonable maximum
     errors.push("amount exceeds maximum allowed value")
   }
+  
+  // Optional fields validation (type checks if present)
+  if (body.transaction_id && typeof body.transaction_id !== 'string') {
+    errors.push("transaction_id must be a string if provided")
+  }
+  if (body.order_id && typeof body.order_id !== 'string') {
+    errors.push("order_id must be a string if provided")
+  }
+  if (body.payment_date && typeof body.payment_date !== 'string') {
+      errors.push("payment_date must be a string if provided")
+  } else if (body.payment_date && isNaN(Date.parse(body.payment_date))) {
+      errors.push("payment_date must be a valid date string if provided")
+  }
+
 
   return { valid: errors.length === 0, errors }
 }
@@ -270,7 +290,6 @@ function checkRateLimit(organizationId: string): RateLimitResult {
   const existing = rateLimitMap.get(key)
 
   if (!existing || now > existing.resetTime) {
-    // Reset or create new entry
     rateLimitMap.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW })
     return { allowed: true, resetTime: now + RATE_LIMIT_WINDOW }
   }
@@ -279,13 +298,12 @@ function checkRateLimit(organizationId: string): RateLimitResult {
     return { allowed: false, resetTime: existing.resetTime }
   }
 
-  // Increment count
   existing.count++
-  rateLimitMap.set(key, existing)
+  rateLimitMap.set(key, existing) // Update existing entry
   return { allowed: true, resetTime: existing.resetTime }
 }
 
-// Get organization settings from iOS app
+// Get organization settings
 async function getOrganizationSettings(
   db: any, 
   organizationId: string, 
@@ -296,31 +314,29 @@ async function getOrganizationSettings(
   }
 ): Promise<OrganizationSettings | null> {
   try {
-    console.log("📧 Checking provided settings:", providedSettings)
-    
-    // Organization settings MUST be provided for white-label app
+    // For white-label app, organization settings must be provided in the request body.
     if (!providedSettings || !providedSettings.organization_name) {
-      console.log("❌ No organization settings provided - this is required for white-label")
-      logger.error("Organization settings not provided in request", { organizationId, providedSettings })
-      return null
+      logger.error("Organization settings (name) not provided in request for white-label app", { organizationId })
+      return null; // Critical information missing
     }
-
-    console.log("✅ Using provided organization settings:", providedSettings)
     
+    // Construct settings from provided data.
+    // Add defaults for optional fields if not provided.
     return {
       id: organizationId,
       name: providedSettings.organization_name,
-      tax_id: providedSettings.organization_tax_id || "",
+      tax_id: providedSettings.organization_tax_id || "", // Default to empty string if not provided
       receipt_message: providedSettings.organization_receipt_message || "Thank you for your generous donation!",
-      logo_url: undefined,
-      contact_email: undefined,
-      website: undefined,
-      receipt_enabled: true
-    }
+      logo_url: undefined, // White-label might not pass logo_url, contact_email, website via request body.
+      contact_email: undefined, // These could be fetched from a DB if a full org profile existed.
+      website: undefined,     // For this specific API, we rely on what's passed.
+      receipt_enabled: true // Assuming if this endpoint is hit for a white-label, receipts are enabled.
+                            // A more robust system might check a flag in a DB.
+    };
     
   } catch (error) {
-    logger.error("Error processing organization settings", { error, organizationId })
-    return null
+    logger.error("Error processing organization settings", { error, organizationId });
+    return null;
   }
 }
 
@@ -344,13 +360,18 @@ async function createReceiptLogEntry(db: any, data: {
         requested_at
       ) VALUES ($1, $2, $3, $4, $5, 'pending', NOW())
       RETURNING id`,
-      [data.organization_id, data.donor_email, data.amount, data.transaction_id, data.order_id]
+      [
+        data.organization_id, 
+        data.donor_email, 
+        data.amount, 
+        data.transaction_id || null, // Ensure null if undefined
+        data.order_id || null       // Ensure null if undefined
+      ]
     )
-    
     return result.rows[0].id
   } catch (error) {
     logger.error("Database error creating receipt log entry", { error, data })
-    throw error
+    throw error // Rethrow to be caught by main handler
   }
 }
 
@@ -367,12 +388,16 @@ async function updateReceiptLogSuccess(db: any, receiptLogId: number, messageId:
     )
   } catch (error) {
     logger.error("Database error updating receipt log success", { error, receiptLogId, messageId })
-    throw error
+    // Do not rethrow, as email sending was successful. Log and continue.
   }
 }
 
-async function updateReceiptLogFailure(db: any, receiptLogId: number, error: string): Promise<void> {
+async function updateReceiptLogFailure(db: any, receiptLogId: number, errorMsg: string): Promise<void> {
   try {
+    // Truncate error message if too long for DB column
+    const MAX_ERROR_LENGTH = 255; // Example, adjust to your DB schema
+    const truncatedError = errorMsg.length > MAX_ERROR_LENGTH ? errorMsg.substring(0, MAX_ERROR_LENGTH) : errorMsg;
+
     await db.query(
       `UPDATE receipt_log 
        SET delivery_status = 'failed', 
@@ -381,17 +406,22 @@ async function updateReceiptLogFailure(db: any, receiptLogId: number, error: str
            last_retry_at = NOW(),
            updated_at = NOW()
        WHERE id = $2`,
-      [error, receiptLogId]
+      [truncatedError, receiptLogId]
     )
   } catch (dbError) {
-    logger.error("Database error updating receipt log failure", { error: dbError, receiptLogId, originalError: error })
-    throw dbError
+    logger.error("Database error updating receipt log failure", { error: dbError, receiptLogId, originalError: errorMsg })
+    // Do not rethrow, main error handling will manage response. Log and continue.
   }
 }
 
-// Updated generateReceiptData function with new date format
-function generateReceiptData(orgSettings: OrganizationSettings, donationData: any): ReceiptData {
-  // Create a proper date formatter for the new format
+// Generate receipt data (content for the email)
+function generateReceiptData(orgSettings: OrganizationSettings, donationData: {
+  amount: number;
+  transaction_id?: string;
+  order_id?: string;
+  payment_date?: string;
+  donor_email: string;
+}): ReceiptData {
   const donationDate = donationData.payment_date ? new Date(donationData.payment_date) : new Date();
   const formattedDate = donationDate.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -411,278 +441,250 @@ function generateReceiptData(orgSettings: OrganizationSettings, donationData: an
     donation: {
       amount: donationData.amount,
       formattedAmount: `$${donationData.amount.toFixed(2)}`,
-      transactionId: donationData.transaction_id || `TXN-${Date.now()}`,
-      orderId: donationData.order_id,
-      date: formattedDate, // Now using the new format: "June 5, 2025"
+      transactionId: donationData.transaction_id || `TXN-${Date.now()}`, // Kept for internal use / SendGrid custom args
+      orderId: donationData.order_id, // Kept for internal use
+      date: formattedDate,
       year: donationDate.getFullYear()
     },
     donor: {
       email: donationData.donor_email
     }
-  }
+  };
 }
 
 // Email sending function
 async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: OrganizationSettings): Promise<EmailResult> {
   try {
-    const htmlContent = generateReceiptHTML(receiptData)
-    const textContent = generateReceiptText(receiptData)
+    const htmlContent = generateReceiptHTML(receiptData);
+    const textContent = generateReceiptText(receiptData); // Also update text version for consistency
 
     const msg = {
       to: receiptData.donor.email,
       from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com',
-       name: orgSettings.name
+        email: process.env.SENDGRID_FROM_EMAIL || 'hello@charitypad.com', // More generic if used by many
+        name: orgSettings.name
       },
-      subject: `Donation Receipt - ${orgSettings.name}`,
+      subject: `Your Donation Receipt from ${orgSettings.name}`,
       text: textContent,
       html: htmlContent,
-      categories: ['donation-receipt'],
+      categories: ['donation-receipt', `org-${orgSettings.id}`],
       customArgs: {
         organization_id: orgSettings.id,
-        transaction_id: receiptData.donation.transactionId,
+        // transaction_id is useful for SendGrid tracking even if not on receipt face
+        transaction_id: receiptData.donation.transactionId, 
         amount: receiptData.donation.amount.toString()
       },
-      // Add tracking
       trackingSettings: {
-        clickTracking: { enable: false },
+        clickTracking: { enable: true, enableText: true }, // Consider enabling for links
         openTracking: { enable: true },
         subscriptionTracking: { enable: false }
       }
-    }
+    };
 
-    const response = await sgMail.send(msg)
-    const messageId = response[0].headers['x-message-id']
+    const response = await sgMail.send(msg);
+    // Ensure response and headers are as expected before accessing x-message-id
+    const messageId = (response && response[0] && response[0].headers && response[0].headers['x-message-id']) 
+                      ? response[0].headers['x-message-id'] 
+                      : undefined;
     
-    return { success: true, messageId }
+    return { success: true, messageId };
+
   } catch (sendGridError: any) {
-    let errorMessage = "Unknown SendGrid error"
-    
-    if (sendGridError.response) {
-      errorMessage = `SendGrid API error: ${sendGridError.response.body?.errors?.[0]?.message || sendGridError.message}`
-    } else {
-      errorMessage = sendGridError.message || "SendGrid service error"
+    let errorMessage = "Unknown SendGrid error";
+    if (sendGridError.response && sendGridError.response.body && sendGridError.response.body.errors) {
+      errorMessage = `SendGrid API error: ${sendGridError.response.body.errors.map((e: any) => e.message).join(', ')}`;
+    } else if (sendGridError.message) {
+      errorMessage = sendGridError.message;
     }
     
-    return { success: false, error: errorMessage }
+    logger.error("SendGrid sending error", { 
+      error: sendGridError, 
+      responseBody: sendGridError.response?.body 
+    });
+    return { success: false, error: errorMessage };
   }
 }
 
-// Updated HTML receipt generation - REMOVED transaction ID and order ID, moved tax ID to main section
+// --- NEW HTML Receipt Generation ---
 function generateReceiptHTML(data: ReceiptData): string {
-  // Escape HTML to prevent XSS
-  const escapeHtml = (text: string): string => {
-    return text
+  // Helper to escape HTML special characters
+  const escapeHtml = (unsafeText: string | undefined): string => {
+    if (unsafeText === undefined || unsafeText === null) return '';
+    return unsafeText
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;")
-  }
+      .replace(/'/g, "&#039;");
+  };
 
-  const safeOrgName = escapeHtml(data.organization.name)
-  const safeMessage = escapeHtml(data.organization.message)
-  const safeTaxId = escapeHtml(data.organization.taxId)
+  const safeOrgName = escapeHtml(data.organization.name);
+  const safeMessage = data.organization.message ? escapeHtml(data.organization.message).replace(/\n/g, '<br />') : '';
+  const safeTaxId = escapeHtml(data.organization.taxId);
+  const orgLogoUrl = data.organization.logoUrl ? escapeHtml(data.organization.logoUrl) : '';
+  const orgContactEmail = data.organization.contactEmail ? escapeHtml(data.organization.contactEmail) : '';
+  const orgWebsite = data.organization.website ? escapeHtml(data.organization.website) : '';
+
+  // Define common styles to ensure consistency and reduce redundancy (applied inline)
+  const styles = {
+    body: `font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6em; color: #333333; margin: 0; padding: 0; width: 100% !important; -webkit-font-smoothing: antialiased; background-color: #f4f4f7;`,
+    emailWrapper: `width: 100%; margin: 0; padding: 20px 0; background-color: #f4f4f7;`,
+    emailContainer: `max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden;`,
+    header: `padding: 30px 30px 20px; text-align: center; border-bottom: 1px solid #eeeeee;`,
+    logo: `max-height: 70px; max-width: 200px; margin-bottom: 20px;`,
+    orgName: `font-size: 26px; font-weight: bold; color: #222222; margin-bottom: 5px;`,
+    receiptSubject: `font-size: 17px; color: #555555; font-weight: 500;`,
+    contentPadding: `padding: 25px 30px;`,
+    greeting: `font-size: 18px; color: #333333; margin-bottom: 10px; text-align: left;`,
+    thankYouNote: `font-size: 16px; color: #444444; margin-bottom: 25px; text-align: left; line-height: 1.6em;`,
+    detailsTable: `width: 100%; margin-bottom: 25px; border-collapse: collapse;`,
+    detailsTh: `padding: 12px 0; text-align: left; font-weight: bold; color: #444444; border-bottom: 1px solid #dddddd; vertical-align: top;`,
+    detailsTd: `padding: 12px 0; text-align: right; color: #555555; border-bottom: 1px solid #dddddd; vertical-align: top;`,
+    amountValue: `font-size: 20px; font-weight: bold; color: #007bff;`, // Accent color for amount
+    orgMessageSection: `background-color: #e9f5fe; border-left: 4px solid #007bff; padding: 20px; margin: 0 30px 25px; border-radius: 6px;`,
+    orgMessageP: `margin: 0; font-size: 15px; color: #334155; line-height: 1.6em;`,
+    taxInfoSection: `padding: 20px; background-color: #fff8e1; border: 1px solid #ffecb3; border-radius: 6px; margin: 0 30px 25px;`,
+    taxInfoP: `margin: 0 0 10px 0; font-size: 14px; color: #543c00; line-height: 1.5em;`,
+    footer: `text-align: center; padding: 20px 30px; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888; background-color: #f9f9f9;`,
+    footerLink: `color: #007bff; text-decoration: none;`,
+    footerP: `margin: 5px 0;`
+  };
 
   return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Donation Receipt</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f8f9fa;
-        }
-        .email-container {
-          background-color: white;
-          border-radius: 8px;
-          padding: 30px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .header {
-          text-align: center;
-          border-bottom: 2px solid #4CAF50;
-          padding-bottom: 20px;
-          margin-bottom: 30px;
-        }
-        .logo {
-          max-width: 120px;
-          height: auto;
-          margin-bottom: 15px;
-        }
-        .org-name {
-          font-size: 24px;
-          font-weight: bold;
-          color: #2c3e50;
-          margin: 10px 0;
-        }
-        .receipt-title {
-          font-size: 18px;
-          color: #4CAF50;
-          font-weight: bold;
-          margin: 20px 0;
-        }
-        .receipt-details {
-          background: #f8f9fa;
-          padding: 20px;
-          border-radius: 8px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          margin: 12px 0;
-          padding: 8px 0;
-          border-bottom: 1px solid #eee;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-          font-weight: bold;
-          font-size: 18px;
-          color: #4CAF50;
-          margin-top: 16px;
-        }
-        .message {
-          background: #e8f5e9;
-          padding: 20px;
-          border-radius: 8px;
-          border-left: 4px solid #4CAF50;
-          margin: 20px 0;
-        }
-        .footer {
-          text-align: center;
-          font-size: 12px;
-          color: #666;
-          margin-top: 30px;
-          padding-top: 20px;
-          border-top: 1px solid #eee;
-        }
-        .tax-note {
-          margin: 20px 0;
-          padding: 15px;
-          background: #fff3cd;
-          border: 1px solid #ffeaa7;
-          border-radius: 5px;
-          font-size: 14px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="email-container">
-        <div class="header">
-          ${data.organization.logoUrl ? `<img src="${data.organization.logoUrl}" alt="Logo" class="logo">` : ''}
-          <div class="org-name">${safeOrgName}</div>
-          <div class="receipt-title">DONATION RECEIPT</div>
-        </div>
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donation Receipt - ${safeOrgName}</title>
+    <style type="text/css">
+      body { ${styles.body} }
+      /* Some styles are better in head for clients that support it, but primary styling is inline */
+      a { color: #007bff; text-decoration: none; }
+    </style>
+  </head>
+  <body style="${styles.body}">
+    <table cellpadding="0" cellspacing="0" border="0" style="${styles.emailWrapper}">
+      <tr>
+        <td align="center">
+          <div style="${styles.emailContainer}">
+            <!-- Header -->
+            <div style="${styles.header}">
+              ${orgLogoUrl ? `<img src="${orgLogoUrl}" alt="${safeOrgName} Logo" style="${styles.logo}" />` : ''}
+              <div style="${styles.orgName}">${safeOrgName}</div>
+              <div style="${styles.receiptSubject}">Official Donation Receipt</div>
+            </div>
 
-        <div class="receipt-details">
-          <div class="detail-row">
-            <span>Date:</span>
-            <span>${data.donation.date}</span>
+            <!-- Greeting & Thank You Note -->
+            <div style="${styles.contentPadding}">
+              <p style="${styles.greeting}">Dear Valued Donor,</p>
+              <p style="${styles.thankYouNote}">
+                Thank you for your generous contribution to ${safeOrgName}. Your support is greatly appreciated and helps us continue our mission.
+              </p>
+            </div>
+
+            <!-- Donation Details -->
+            <div style="padding: 0 30px 25px;">
+              <table cellpadding="0" cellspacing="0" border="0" style="${styles.detailsTable}">
+                <tr>
+                  <th style="${styles.detailsTh} width: 40%;">Donation Amount</th>
+                  <td style="${styles.detailsTd}"><span style="${styles.amountValue}">${data.donation.formattedAmount}</span></td>
+                </tr>
+                <tr>
+                  <th style="${styles.detailsTh}">Date of Donation</th>
+                  <td style="${styles.detailsTd}">${escapeHtml(data.donation.date)}</td>
+                </tr>
+                ${safeTaxId ? `
+                <tr>
+                  <th style="${styles.detailsTh}">Tax ID (EIN)</th>
+                  <td style="${styles.detailsTd}">${safeTaxId}</td>
+                </tr>
+                ` : ''}
+              </table>
+            </div>
+
+            <!-- Message from Organization (if provided) -->
+            ${safeMessage ? `
+            <div style="${styles.orgMessageSection}">
+              <p style="${styles.orgMessageP}">${safeMessage}</p>
+            </div>
+            ` : ''}
+
+            <!-- Tax Information (if Tax ID provided) -->
+            ${safeTaxId ? `
+            <div style="${styles.taxInfoSection}">
+              <p style="${styles.taxInfoP} font-weight: bold;">Tax Information for Your Records:</p>
+              <p style="${styles.taxInfoP}">This receipt confirms your donation to ${safeOrgName}${safeTaxId ? `, a registered non-profit organization (Tax ID: ${safeTaxId})` : ''}.</p>
+              <p style="${styles.taxInfoP} margin-bottom: 0;">Please retain this receipt for your tax purposes. No goods or services were provided in exchange for this contribution, unless explicitly stated otherwise by the organization.</p>
+            </div>
+            ` : ''}
+
+            <!-- Footer -->
+            <div style="${styles.footer}">
+              ${orgContactEmail ? `<p style="${styles.footerP}">Questions? <a href="mailto:${orgContactEmail}" style="${styles.footerLink}">${orgContactEmail}</a></p>` : ''}
+              ${orgWebsite ? `<p style="${styles.footerP}">Visit our website: <a href="${orgWebsite}" target="_blank" style="${styles.footerLink}">${orgWebsite}</a></p>` : ''}
+              <p style="${styles.footerP}">&copy; ${escapeHtml(data.donation.year.toString())} ${safeOrgName}. All rights reserved.</p>
+              <p style="${styles.footerP} margin-top:10px;">Powered by CharityPad</p>
+            </div>
           </div>
-          ${safeTaxId ? `
-          <div class="detail-row">
-            <span>Tax ID (EIN):</span>
-            <span>${safeTaxId}</span>
-          </div>
-          ` : ''}
-          <div class="detail-row">
-            <span>Donation Amount:</span>
-            <span>${data.donation.formattedAmount}</span>
-          </div>
-        </div>
-
-        <div class="message">
-          ${safeMessage}
-        </div>
-
-        ${safeTaxId ? `
-        <div class="tax-note">
-          <strong>Tax Information:</strong><br>
-          This donation was made to ${safeOrgName}. Keep this receipt for your tax records.
-        </div>
-        ` : ''}
-
-        <div class="footer">
-          <p>This receipt was generated automatically.</p>
-          ${data.organization.contactEmail ? `<p>Questions? Contact us at ${data.organization.contactEmail}</p>` : ''}
-          ${data.organization.website ? `<p>Visit us: ${data.organization.website}</p>` : ''}
-          <p>Powered by CharityPad</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>`;
 }
 
-// Updated text receipt generation - REMOVED transaction ID and order ID, moved tax ID to main section
+// --- UPDATED Text Receipt Generation (for consistency with HTML version) ---
 function generateReceiptText(data: ReceiptData): string {
-  // Helper function to clean text for plain text email
-  const cleanText = (text: string): string => {
-    return text
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#039;/g, "'")
-      .trim()
+  const escapeText = (unsafeText: string | undefined): string => {
+    if (unsafeText === undefined || unsafeText === null) return '';
+    // Basic text cleaning, can be expanded
+    return unsafeText.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, "");
+  };
+
+  const safeOrgName = escapeText(data.organization.name);
+  const safeMessage = escapeText(data.organization.message);
+  const safeTaxId = escapeText(data.organization.taxId);
+  const orgContactEmail = escapeText(data.organization.contactEmail);
+  const orgWebsite = escapeText(data.organization.website);
+
+  let receipt = `OFFICIAL DONATION RECEIPT\n`;
+  receipt += `==================================================\n\n`;
+  receipt += `${safeOrgName}\n\n`;
+
+  receipt += `Dear Valued Donor,\n`;
+  receipt += `Thank you for your generous contribution to ${safeOrgName}. Your support is greatly appreciated and helps us continue our mission.\n\n`;
+
+  receipt += `DONATION DETAILS:\n`;
+  receipt += `--------------------------------------------------\n`;
+  receipt += `Donation Amount: ${data.donation.formattedAmount}\n`;
+  receipt += `Date of Donation: ${data.donation.date}\n`;
+  if (safeTaxId) {
+    receipt += `Tax ID (EIN): ${safeTaxId}\n`;
+  }
+  receipt += `\n`;
+
+  if (safeMessage) {
+    receipt += `A MESSAGE FROM ${safeOrgName.toUpperCase()}:\n`;
+    receipt += `${safeMessage}\n\n`;
   }
 
-  const lines: string[] = []
-  
-  // Header
-  lines.push("DONATION RECEIPT")
-  lines.push("=" + "=".repeat(47))
-  lines.push("")
-  lines.push(cleanText(data.organization.name))
-  lines.push("")
-  
-  // Receipt details
-  lines.push("Receipt Details:")
-  lines.push("-".repeat(20))
-  lines.push(`Date: ${data.donation.date}`)
-  
-  if (data.organization.taxId) {
-    lines.push(`Tax ID (EIN): ${data.organization.taxId}`)
+  if (safeTaxId) {
+    receipt += `TAX INFORMATION FOR YOUR RECORDS:\n`;
+    receipt += `--------------------------------------------------\n`;
+    receipt += `This receipt confirms your donation to ${safeOrgName}${safeTaxId ? `, a registered non-profit organization (Tax ID: ${safeTaxId})` : ''}.\n`;
+    receipt += `Please retain this receipt for your tax purposes. No goods or services were provided in exchange for this contribution, unless explicitly stated otherwise by the organization.\n\n`;
   }
-  
-  lines.push(`Donation Amount: ${data.donation.formattedAmount}`)
-  lines.push("")
-  
-  // Message
-  lines.push(cleanText(data.organization.message))
-  lines.push("")
-  
-  // Tax information note
-  if (data.organization.taxId) {
-    lines.push("Tax Information:")
-    lines.push("-".repeat(20))
-    lines.push(`This donation was made to ${cleanText(data.organization.name)}.`)
-    lines.push("Keep this receipt for your tax records.")
-    lines.push("")
+
+  receipt += `--------------------------------------------------\n`;
+  if (orgContactEmail) {
+    receipt += `Questions? Contact us at ${orgContactEmail}\n`;
   }
-  
-  // Footer
-  lines.push("-".repeat(48))
-  lines.push("This receipt was generated automatically.")
-  
-  if (data.organization.contactEmail) {
-    lines.push(`Questions? Contact us at ${data.organization.contactEmail}`)
+  if (orgWebsite) {
+    receipt += `Visit our website: ${orgWebsite}\n`;
   }
-  
-  if (data.organization.website) {
-    lines.push(`Visit us: ${data.organization.website}`)
-  }
-  
-  lines.push("Powered by ShulPad")
-  
-  return lines.join("\n")
+  receipt += `© ${data.donation.year} ${safeOrgName}. All rights reserved.\n`;
+  receipt += `Powered by CharityPad\n`;
+
+  return receipt;
 }
