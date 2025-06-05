@@ -464,7 +464,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
         email: process.env.SENDGRID_FROM_EMAIL || 'hello@charitypad.com', // More generic if used by many
         name: orgSettings.name
       },
-      subject: `Your Donation Receipt from ${orgSettings.name}`,
+      subject: 'Thank You For Your Donation!', // <-- SUBJECT LINE CHANGED
       text: textContent,
       html: htmlContent,
       categories: ['donation-receipt', `org-${orgSettings.id}`],
@@ -505,7 +505,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
   }
 }
 
-// --- NEW HTML Receipt Generation ---
+// --- MODIFIED HTML Receipt Generation ---
 function generateReceiptHTML(data: ReceiptData): string {
   // Helper to escape HTML special characters
   const escapeHtml = (unsafeText: string | undefined): string => {
@@ -519,7 +519,6 @@ function generateReceiptHTML(data: ReceiptData): string {
   };
 
   const safeOrgName = escapeHtml(data.organization.name);
-  const safeMessage = data.organization.message ? escapeHtml(data.organization.message).replace(/\n/g, '<br />') : '';
   const safeTaxId = escapeHtml(data.organization.taxId);
   const orgLogoUrl = data.organization.logoUrl ? escapeHtml(data.organization.logoUrl) : '';
   const orgContactEmail = data.organization.contactEmail ? escapeHtml(data.organization.contactEmail) : '';
@@ -535,16 +534,11 @@ function generateReceiptHTML(data: ReceiptData): string {
     orgName: `font-size: 26px; font-weight: bold; color: #222222; margin-bottom: 5px;`,
     receiptSubject: `font-size: 17px; color: #555555; font-weight: 500;`,
     contentPadding: `padding: 25px 30px;`,
-    greeting: `font-size: 18px; color: #333333; margin-bottom: 10px; text-align: left;`,
     thankYouNote: `font-size: 16px; color: #444444; margin-bottom: 25px; text-align: left; line-height: 1.6em;`,
     detailsTable: `width: 100%; margin-bottom: 25px; border-collapse: collapse;`,
     detailsTh: `padding: 12px 0; text-align: left; font-weight: bold; color: #444444; border-bottom: 1px solid #dddddd; vertical-align: top;`,
     detailsTd: `padding: 12px 0; text-align: right; color: #555555; border-bottom: 1px solid #dddddd; vertical-align: top;`,
     amountValue: `font-size: 20px; font-weight: bold; color: #007bff;`, // Accent color for amount
-    orgMessageSection: `background-color: #e9f5fe; border-left: 4px solid #007bff; padding: 20px; margin: 0 30px 25px; border-radius: 6px;`,
-    orgMessageP: `margin: 0; font-size: 15px; color: #334155; line-height: 1.6em;`,
-    taxInfoSection: `padding: 20px; background-color: #fff8e1; border: 1px solid #ffecb3; border-radius: 6px; margin: 0 30px 25px;`,
-    taxInfoP: `margin: 0 0 10px 0; font-size: 14px; color: #543c00; line-height: 1.5em;`,
     footer: `text-align: center; padding: 20px 30px; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888; background-color: #f9f9f9;`,
     footerLink: `color: #007bff; text-decoration: none;`,
     footerP: `margin: 5px 0;`
@@ -568,22 +562,18 @@ function generateReceiptHTML(data: ReceiptData): string {
       <tr>
         <td align="center">
           <div style="${styles.emailContainer}">
-            <!-- Header -->
             <div style="${styles.header}">
               ${orgLogoUrl ? `<img src="${orgLogoUrl}" alt="${safeOrgName} Logo" style="${styles.logo}" />` : ''}
               <div style="${styles.orgName}">${safeOrgName}</div>
-              <div style="${styles.receiptSubject}">Official Donation Receipt</div>
+              <div style="${styles.receiptSubject}">Donation Receipt</div>
             </div>
 
-            <!-- Greeting & Thank You Note -->
             <div style="${styles.contentPadding}">
-              <p style="${styles.greeting}">Dear Valued Donor,</p>
               <p style="${styles.thankYouNote}">
                 Thank you for your generous contribution to ${safeOrgName}. Your support is greatly appreciated and helps us continue our mission.
               </p>
             </div>
 
-            <!-- Donation Details -->
             <div style="padding: 0 30px 25px;">
               <table cellpadding="0" cellspacing="0" border="0" style="${styles.detailsTable}">
                 <tr>
@@ -603,28 +593,10 @@ function generateReceiptHTML(data: ReceiptData): string {
               </table>
             </div>
 
-            <!-- Message from Organization (if provided) -->
-            ${safeMessage ? `
-            <div style="${styles.orgMessageSection}">
-              <p style="${styles.orgMessageP}">${safeMessage}</p>
-            </div>
-            ` : ''}
-
-            <!-- Tax Information (if Tax ID provided) -->
-            ${safeTaxId ? `
-            <div style="${styles.taxInfoSection}">
-              <p style="${styles.taxInfoP} font-weight: bold;">Tax Information for Your Records:</p>
-              <p style="${styles.taxInfoP}">This receipt confirms your donation to ${safeOrgName}${safeTaxId ? `, a registered non-profit organization (Tax ID: ${safeTaxId})` : ''}.</p>
-              <p style="${styles.taxInfoP} margin-bottom: 0;">Please retain this receipt for your tax purposes. No goods or services were provided in exchange for this contribution, unless explicitly stated otherwise by the organization.</p>
-            </div>
-            ` : ''}
-
-            <!-- Footer -->
             <div style="${styles.footer}">
               ${orgContactEmail ? `<p style="${styles.footerP}">Questions? <a href="mailto:${orgContactEmail}" style="${styles.footerLink}">${orgContactEmail}</a></p>` : ''}
               ${orgWebsite ? `<p style="${styles.footerP}">Visit our website: <a href="${orgWebsite}" target="_blank" style="${styles.footerLink}">${orgWebsite}</a></p>` : ''}
-              <p style="${styles.footerP}">&copy; ${escapeHtml(data.donation.year.toString())} ${safeOrgName}. All rights reserved.</p>
-              <p style="${styles.footerP} margin-top:10px;">Powered by CharityPad</p>
+              <p style="${styles.footerP} margin-top:10px;">Powered by ShulPad</p>
             </div>
           </div>
         </td>
@@ -634,7 +606,7 @@ function generateReceiptHTML(data: ReceiptData): string {
   </html>`;
 }
 
-// --- UPDATED Text Receipt Generation (for consistency with HTML version) ---
+// --- MODIFIED Text Receipt Generation (for consistency with HTML version) ---
 function generateReceiptText(data: ReceiptData): string {
   const escapeText = (unsafeText: string | undefined): string => {
     if (unsafeText === undefined || unsafeText === null) return '';
@@ -643,7 +615,6 @@ function generateReceiptText(data: ReceiptData): string {
   };
 
   const safeOrgName = escapeText(data.organization.name);
-  const safeMessage = escapeText(data.organization.message);
   const safeTaxId = escapeText(data.organization.taxId);
   const orgContactEmail = escapeText(data.organization.contactEmail);
   const orgWebsite = escapeText(data.organization.website);
@@ -652,7 +623,6 @@ function generateReceiptText(data: ReceiptData): string {
   receipt += `==================================================\n\n`;
   receipt += `${safeOrgName}\n\n`;
 
-  receipt += `Dear Valued Donor,\n`;
   receipt += `Thank you for your generous contribution to ${safeOrgName}. Your support is greatly appreciated and helps us continue our mission.\n\n`;
 
   receipt += `DONATION DETAILS:\n`;
@@ -664,18 +634,6 @@ function generateReceiptText(data: ReceiptData): string {
   }
   receipt += `\n`;
 
-  if (safeMessage) {
-    receipt += `A MESSAGE FROM ${safeOrgName.toUpperCase()}:\n`;
-    receipt += `${safeMessage}\n\n`;
-  }
-
-  if (safeTaxId) {
-    receipt += `TAX INFORMATION FOR YOUR RECORDS:\n`;
-    receipt += `--------------------------------------------------\n`;
-    receipt += `This receipt confirms your donation to ${safeOrgName}${safeTaxId ? `, a registered non-profit organization (Tax ID: ${safeTaxId})` : ''}.\n`;
-    receipt += `Please retain this receipt for your tax purposes. No goods or services were provided in exchange for this contribution, unless explicitly stated otherwise by the organization.\n\n`;
-  }
-
   receipt += `--------------------------------------------------\n`;
   if (orgContactEmail) {
     receipt += `Questions? Contact us at ${orgContactEmail}\n`;
@@ -683,7 +641,6 @@ function generateReceiptText(data: ReceiptData): string {
   if (orgWebsite) {
     receipt += `Visit our website: ${orgWebsite}\n`;
   }
-  receipt += `© ${data.donation.year} ${safeOrgName}. All rights reserved.\n`;
   receipt += `Powered by CharityPad\n`;
 
   return receipt;
