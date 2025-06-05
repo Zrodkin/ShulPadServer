@@ -431,27 +431,27 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
     const textContent = generateReceiptText(receiptData) // ✅ This function is now defined below
 
     const msg = {
-      to: receiptData.donor.email,
-      from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'noreply@shulpad.com',
-        name: `${orgSettings.name} via ShulPad`
-      },
-      subject: `Donation Receipt - ${orgSettings.name}`,
-      text: textContent,
-      html: htmlContent,
-      categories: ['donation-receipt'],
-      customArgs: {
-        organization_id: orgSettings.id,
-        transaction_id: receiptData.donation.transactionId,
-        amount: receiptData.donation.amount.toString()
-      },
-      // Add tracking
-      trackingSettings: {
-        clickTracking: { enable: false },
-        openTracking: { enable: true },
-        subscriptionTracking: { enable: false }
-      }
-    }
+  to: receiptData.donor.email,
+  from: {
+    email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com',
+    name: 'ShulPad'  
+  },
+  subject: 'Thank You For Your Donation!',
+  text: textContent,
+  html: htmlContent,
+  categories: ['donation-receipt'],
+  customArgs: {
+    organization_id: orgSettings.id,
+    transaction_id: receiptData.donation.transactionId,
+    amount: receiptData.donation.amount.toString()
+  },
+  // Add tracking
+  trackingSettings: {
+    clickTracking: { enable: false },
+    openTracking: { enable: true },
+    subscriptionTracking: { enable: false }
+  }
+}
 
     const response = await sgMail.send(msg)
     const messageId = response[0].headers['x-message-id']
@@ -486,9 +486,28 @@ function generateReceiptHTML(data: ReceiptData): string {
 
   const safeOrgName = escapeHtml(data.organization.name)
   const safeMessage = escapeHtml(data.organization.message)
-  const safeTaxId = escapeHtml(data.organization.taxId)
-  const safeTransactionId = escapeHtml(data.donation.transactionId)
-  const safeOrderId = data.donation.orderId ? escapeHtml(data.donation.orderId) : null
+  
+  // Format date as "June 4th, 2025" style
+  const formatDateWithOrdinal = (dateStr: string): string => {
+    const date = new Date(dateStr)
+    const day = date.getDate()
+    const month = date.toLocaleDateString('en-US', { month: 'long' })
+    const year = date.getFullYear()
+    
+    const getOrdinalSuffix = (day: number): string => {
+      if (day > 3 && day < 21) return 'th'
+      switch (day % 10) {
+        case 1: return 'st'
+        case 2: return 'nd'
+        case 3: return 'rd'
+        default: return 'th'
+      }
+    }
+    
+    return `${month} ${day}${getOrdinalSuffix(day)}, ${year}`
+  }
+
+  const formattedDate = formatDateWithOrdinal(data.donation.date)
 
   return `
     <!DOCTYPE html>
@@ -496,7 +515,7 @@ function generateReceiptHTML(data: ReceiptData): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Thank You for Your Donation</title>
+      <title>Thank You For Your Donation!</title>
       <style>
         * { box-sizing: border-box; }
         
@@ -510,245 +529,129 @@ function generateReceiptHTML(data: ReceiptData): string {
         }
         
         .email-wrapper {
-          max-width: 600px;
+          max-width: 500px;
           margin: 0 auto;
           padding: 40px 20px;
         }
         
         .email-container {
           background: #ffffff;
-          border-radius: 24px;
+          border-radius: 20px;
           overflow: hidden;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+          box-shadow: 0 15px 40px rgba(0, 0, 0, 0.1);
         }
         
         .header {
           background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-          padding: 50px 40px;
+          padding: 40px 30px;
           text-align: center;
           color: white;
-          position: relative;
-        }
-        
-        .header::after {
-          content: '';
-          position: absolute;
-          bottom: -20px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 0;
-          height: 0;
-          border-left: 20px solid transparent;
-          border-right: 20px solid transparent;
-          border-top: 20px solid #00f2fe;
         }
         
         .heart-icon {
           background: rgba(255, 255, 255, 0.2);
-          width: 80px;
-          height: 80px;
+          width: 70px;
+          height: 70px;
           border-radius: 50%;
           margin: 0 auto 20px;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 36px;
+          font-size: 30px;
         }
         
-        .org-name {
-          font-size: 28px;
+        .thank-you-title {
+          font-size: 24px;
           font-weight: 700;
-          margin: 0 0 10px 0;
+          margin: 0;
           text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
         
-        .thank-you {
-          font-size: 18px;
-          margin: 0;
-          opacity: 0.95;
-          font-weight: 300;
-        }
-        
         .content {
-          padding: 60px 40px 40px;
-        }
-        
-        .donation-amount {
+          padding: 40px 30px;
           text-align: center;
-          margin-bottom: 40px;
         }
         
-        .amount-label {
-          font-size: 16px;
-          color: #666;
-          margin-bottom: 10px;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          font-weight: 500;
+        .receipt-info {
+          background: #f8f9fa;
+          border-radius: 12px;
+          padding: 25px;
+          margin: 20px 0;
         }
         
-        .amount-value {
-          font-size: 48px;
-          font-weight: 800;
-          color: #2c3e50;
-          margin: 0;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-        
-        .receipt-details {
-          background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-          border-radius: 16px;
-          padding: 30px;
-          margin: 40px 0;
-          border: 1px solid #e9ecef;
-        }
-        
-        .detail-header {
-          font-size: 18px;
-          font-weight: 600;
-          color: #2c3e50;
-          margin-bottom: 20px;
-          text-align: center;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-        }
-        
-        .detail-row {
+        .info-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 12px 0;
+          padding: 10px 0;
           border-bottom: 1px solid rgba(0, 0, 0, 0.05);
         }
         
-        .detail-row:last-child {
+        .info-row:last-child {
           border-bottom: none;
-          padding-bottom: 0;
         }
         
-        .detail-label {
+        .info-label {
           color: #666;
           font-weight: 500;
           font-size: 14px;
         }
         
-        .detail-value {
+        .info-value {
           color: #2c3e50;
           font-weight: 600;
           font-size: 14px;
         }
         
-        .tax-info {
-          background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-          border: 1px solid #ffeaa7;
-          border-radius: 16px;
-          padding: 25px;
-          margin: 30px 0;
-          position: relative;
-        }
-        
-        .tax-info::before {
-          content: '🏛️';
-          position: absolute;
-          top: -15px;
-          left: 25px;
-          background: #ffeaa7;
-          padding: 8px 12px;
-          border-radius: 20px;
-          font-size: 18px;
-        }
-        
-        .tax-title {
-          font-weight: 700;
-          color: #856404;
-          font-size: 16px;
-          margin-bottom: 10px;
-          margin-top: 5px;
-        }
-        
-        .tax-details {
-          color: #856404;
-          font-size: 14px;
-          line-height: 1.5;
+        .amount-highlight {
+          font-size: 24px;
+          font-weight: 800;
+          color: #4facfe;
         }
         
         .message-section {
           background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-          border: 1px solid #c3e6cb;
-          border-radius: 16px;
-          padding: 30px;
-          margin: 30px 0;
+          border-radius: 12px;
+          padding: 25px;
+          margin: 25px 0;
           text-align: center;
-          position: relative;
-        }
-        
-        .message-section::before {
-          content: '💝';
-          position: absolute;
-          top: -15px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: #c3e6cb;
-          padding: 8px 12px;
-          border-radius: 20px;
-          font-size: 18px;
         }
         
         .message-text {
           color: #155724;
           font-size: 16px;
           font-weight: 500;
-          line-height: 1.6;
-          margin-top: 10px;
-          font-style: italic;
+          line-height: 1.5;
+          margin: 0;
         }
         
         .footer {
           background: #f8f9fa;
-          padding: 30px 40px;
+          padding: 20px 30px;
           text-align: center;
           border-top: 1px solid #e9ecef;
         }
         
         .footer-content {
           color: #6c757d;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-        
-        .footer-content strong {
-          color: #495057;
+          font-size: 12px;
+          line-height: 1.4;
         }
         
         .powered-by {
-          margin-top: 20px;
-          padding-top: 20px;
+          margin-top: 15px;
+          padding-top: 15px;
           border-top: 1px solid #dee2e6;
           color: #adb5bd;
-          font-size: 12px;
-        }
-        
-        .contact-info {
-          margin: 15px 0;
-        }
-        
-        .contact-info a {
-          color: #007bff;
-          text-decoration: none;
+          font-size: 11px;
         }
         
         @media (max-width: 600px) {
           .email-wrapper { padding: 20px 10px; }
-          .header { padding: 40px 20px; }
-          .content { padding: 40px 20px 20px; }
-          .footer { padding: 20px; }
-          .amount-value { font-size: 36px; }
-          .org-name { font-size: 24px; }
+          .header { padding: 30px 20px; }
+          .content { padding: 30px 20px; }
+          .footer { padding: 15px 20px; }
+          .thank-you-title { font-size: 20px; }
         }
       </style>
     </head>
@@ -758,54 +661,26 @@ function generateReceiptHTML(data: ReceiptData): string {
           <!-- Header -->
           <div class="header">
             <div class="heart-icon">❤️</div>
-            <h1 class="org-name">${safeOrgName}</h1>
-            <p class="thank-you">Thank you for your generous donation</p>
+            <h1 class="thank-you-title">Thank You For Your Donation!</h1>
           </div>
           
           <!-- Content -->
           <div class="content">
-            <!-- Donation Amount -->
-            <div class="donation-amount">
-              <div class="amount-label">Donation Amount</div>
-              <h2 class="amount-value">${data.donation.formattedAmount}</h2>
-            </div>
-            
-            <!-- Receipt Details -->
-            <div class="receipt-details">
-              <div class="detail-header">
-                📋 Receipt Details
+            <!-- Receipt Info -->
+            <div class="receipt-info">
+              <div class="info-row">
+                <span class="info-label">Date</span>
+                <span class="info-value">${formattedDate}</span>
               </div>
-              <div class="detail-row">
-                <span class="detail-label">Date</span>
-                <span class="detail-value">${data.donation.date}</span>
+              <div class="info-row">
+                <span class="info-label">Organization</span>
+                <span class="info-value">${safeOrgName}</span>
               </div>
-              <div class="detail-row">
-                <span class="detail-label">Transaction ID</span>
-                <span class="detail-value">${safeTransactionId}</span>
-              </div>
-              ${safeOrderId ? `
-              <div class="detail-row">
-                <span class="detail-label">Order ID</span>
-                <span class="detail-value">${safeOrderId}</span>
-              </div>
-              ` : ''}
-              <div class="detail-row">
-                <span class="detail-label">Organization</span>
-                <span class="detail-value">${safeOrgName}</span>
+              <div class="info-row">
+                <span class="info-label">Amount</span>
+                <span class="info-value amount-highlight">${data.donation.formattedAmount}</span>
               </div>
             </div>
-            
-            <!-- Tax Information -->
-            ${safeTaxId ? `
-            <div class="tax-info">
-              <div class="tax-title">Tax Deductible Donation</div>
-              <div class="tax-details">
-                <strong>Organization:</strong> ${safeOrgName}<br>
-                <strong>Tax ID (EIN):</strong> ${safeTaxId}<br>
-                <strong>Important:</strong> Please keep this receipt for your tax records. This donation may be tax-deductible according to IRS guidelines.
-              </div>
-            </div>
-            ` : ''}
             
             <!-- Thank You Message -->
             <div class="message-section">
@@ -816,23 +691,8 @@ function generateReceiptHTML(data: ReceiptData): string {
           <!-- Footer -->
           <div class="footer">
             <div class="footer-content">
-              <strong>Receipt Information</strong><br>
-              This receipt was generated automatically on ${data.donation.date}.<br>
-              Please keep this email for your records.
-              
-              ${data.organization.contactEmail ? `
-              <div class="contact-info">
-                Questions? Contact us at <a href="mailto:${data.organization.contactEmail}">${data.organization.contactEmail}</a>
-              </div>
-              ` : ''}
-              
-              ${data.organization.website ? `
-              <div class="contact-info">
-                Visit our website: <a href="${data.organization.website}">${data.organization.website}</a>
-              </div>
-              ` : ''}
+              Please keep this receipt for your tax records.
             </div>
-            
             <div class="powered-by">
               Powered by ShulPad
             </div>
@@ -846,7 +706,6 @@ function generateReceiptHTML(data: ReceiptData): string {
 
 // ✅ FIXED: Added the missing generateReceiptText function
 function generateReceiptText(data: ReceiptData): string {
-  // Helper function to clean text for plain text email (remove HTML entities, etc.)
   const cleanText = (text: string): string => {
     return text
       .replace(/&amp;/g, "&")
@@ -857,55 +716,42 @@ function generateReceiptText(data: ReceiptData): string {
       .trim()
   }
 
+  // Format date as "June 4th, 2025" style for text version too
+  const formatDateWithOrdinal = (dateStr: string): string => {
+    const date = new Date(dateStr)
+    const day = date.getDate()
+    const month = date.toLocaleDateString('en-US', { month: 'long' })
+    const year = date.getFullYear()
+    
+    const getOrdinalSuffix = (day: number): string => {
+      if (day > 3 && day < 21) return 'th'
+      switch (day % 10) {
+        case 1: return 'st'
+        case 2: return 'nd'
+        case 3: return 'rd'
+        default: return 'th'
+      }
+    }
+    
+    return `${month} ${day}${getOrdinalSuffix(day)}, ${year}`
+  }
+
+  const formattedDate = formatDateWithOrdinal(data.donation.date)
+
   const lines: string[] = []
   
-  // Header
-  lines.push("DONATION RECEIPT")
-  lines.push("=" + "=".repeat(47))
+  lines.push("THANK YOU FOR YOUR DONATION!")
+  lines.push("=" + "=".repeat(31))
   lines.push("")
-  lines.push(cleanText(data.organization.name))
+  lines.push(`Date: ${formattedDate}`)
+  lines.push(`Organization: ${cleanText(data.organization.name)}`)
+  lines.push(`Amount: ${data.donation.formattedAmount}`)
   lines.push("")
-  
-  // Receipt details
-  lines.push("Receipt Details:")
-  lines.push("-".repeat(20))
-  lines.push(`Date: ${data.donation.date}`)
-  lines.push(`Transaction ID: ${data.donation.transactionId}`)
-  
-  if (data.donation.orderId) {
-    lines.push(`Order ID: ${data.donation.orderId}`)
-  }
-  
-  lines.push(`Donation Amount: ${data.donation.formattedAmount}`)
-  lines.push("")
-  
-  // Tax information
-  if (data.organization.taxId) {
-    lines.push("Tax Information:")
-    lines.push("-".repeat(20))
-    lines.push(`This donation was made to ${cleanText(data.organization.name)}`)
-    lines.push(`Tax ID (EIN): ${data.organization.taxId}`)
-    lines.push("Keep this receipt for your tax records.")
-    lines.push("")
-  }
-  
-  // Message
   lines.push(cleanText(data.organization.message))
   lines.push("")
-  
-  // Footer
-  lines.push("-".repeat(48))
-  lines.push("This receipt was generated automatically.")
-  
-  if (data.organization.contactEmail) {
-    lines.push(`Questions? Contact us at ${data.organization.contactEmail}`)
-  }
-  
-  if (data.organization.website) {
-    lines.push(`Visit us: ${data.organization.website}`)
-  }
-  
-  lines.push("Powered by CharityPad")
+  lines.push("Please keep this receipt for your tax records.")
+  lines.push("")
+  lines.push("Powered by ShulPad")
   
   return lines.join("\n")
 }
