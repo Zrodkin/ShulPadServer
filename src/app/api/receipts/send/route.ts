@@ -462,7 +462,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
       to: receiptData.donor.email,
       from: {
         email: process.env.SENDGRID_FROM_EMAIL || 'hello@charitypad.com', // More generic if used by many
-        name: orgSettings.name
+        name: 'ShulPad'
       },
       subject: 'Thank You For Your Donation!', // <-- SUBJECT LINE CHANGED
       text: textContent,
@@ -507,7 +507,6 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
 
 // --- MODIFIED HTML Receipt Generation ---
 function generateReceiptHTML(data: ReceiptData): string {
-  // Helper to escape HTML special characters
   const escapeHtml = (unsafeText: string | undefined): string => {
     if (unsafeText === undefined || unsafeText === null) return '';
     return unsafeText
@@ -524,24 +523,27 @@ function generateReceiptHTML(data: ReceiptData): string {
   const orgContactEmail = data.organization.contactEmail ? escapeHtml(data.organization.contactEmail) : '';
   const orgWebsite = data.organization.website ? escapeHtml(data.organization.website) : '';
 
-  // Define common styles to ensure consistency and reduce redundancy (applied inline)
   const styles = {
-    body: `font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6em; color: #333333; margin: 0; padding: 0; width: 100% !important; -webkit-font-smoothing: antialiased; background-color: #f4f4f7;`,
-    emailWrapper: `width: 100%; margin: 0; padding: 20px 0; background-color: #f4f4f7;`,
-    emailContainer: `max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden;`,
-    header: `padding: 30px 30px 20px; text-align: center; border-bottom: 1px solid #eeeeee;`,
-    logo: `max-height: 70px; max-width: 200px; margin-bottom: 20px;`,
-    orgName: `font-size: 26px; font-weight: bold; color: #222222; margin-bottom: 5px;`,
-    receiptSubject: `font-size: 17px; color: #555555; font-weight: 500;`,
-    contentPadding: `padding: 25px 30px;`,
-    thankYouNote: `font-size: 16px; color: #444444; margin-bottom: 25px; text-align: left; line-height: 1.6em;`,
-    detailsTable: `width: 100%; margin-bottom: 25px; border-collapse: collapse;`,
-    detailsTh: `padding: 12px 0; text-align: left; font-weight: bold; color: #444444; border-bottom: 1px solid #dddddd; vertical-align: top;`,
-    detailsTd: `padding: 12px 0; text-align: right; color: #555555; border-bottom: 1px solid #dddddd; vertical-align: top;`,
-    amountValue: `font-size: 20px; font-weight: bold; color: #007bff;`, // Accent color for amount
-    footer: `text-align: center; padding: 20px 30px; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888; background-color: #f9f9f9;`,
-    footerLink: `color: #007bff; text-decoration: none;`,
-    footerP: `margin: 5px 0;`
+    body: `font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6em; color: #333333; margin: 0; padding: 0; width: 100% !important; -webkit-font-smoothing: antialiased; background-color: #f8f9fa;`,
+    emailWrapper: `width: 100%; margin: 0; padding: 20px 0; background-color: #f8f9fa;`,
+    emailContainer: `max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #e9ecef;`,
+    header: `padding: 35px 30px 25px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;`,
+    logo: `max-height: 60px; max-width: 180px; margin-bottom: 16px;`,
+    orgName: `font-size: 24px; font-weight: 600; color: white; margin-bottom: 8px; letter-spacing: 0.5px;`,
+    receiptSubject: `font-size: 14px; color: rgba(255,255,255,0.9); font-weight: 400; text-transform: uppercase; letter-spacing: 1px;`,
+    contentPadding: `padding: 30px 30px 20px;`,
+    thankYouNote: `font-size: 16px; color: #495057; margin-bottom: 30px; text-align: center; line-height: 1.7em; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 25px; border-radius: 10px;`,
+    detailsSection: `background-color: #f8f9fa; border-radius: 10px; padding: 25px; margin-bottom: 25px; border: 1px solid #e9ecef;`,
+    detailsTable: `width: 100%; border-collapse: collapse;`,
+    regularRow: `border-bottom: 1px solid #dee2e6;`,
+    amountRow: `background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%); border-radius: 8px; border: 1px solid rgba(102, 126, 234, 0.2);`,
+    detailsTh: `padding: 15px 0; text-align: left; font-weight: 500; color: #495057; font-size: 14px; vertical-align: middle;`,
+    detailsTd: `padding: 15px 0; text-align: right; color: #212529; font-size: 15px; vertical-align: middle;`,
+    amountLabel: `padding: 18px 15px; text-align: left; font-weight: 600; color: #667eea; font-size: 16px; vertical-align: middle;`,
+    amountValue: `padding: 18px 15px; text-align: right; font-size: 22px; font-weight: 700; color: #667eea; vertical-align: middle;`,
+    footer: `text-align: center; padding: 15px 30px; border-top: 1px solid #e9ecef; font-size: 13px; color: #6c757d; background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);`,
+    footerLink: `color: #667eea; text-decoration: none; font-weight: 500;`,
+    footerP: `margin: 6px 0; line-height: 1.4;`
   };
 
   return `
@@ -553,50 +555,77 @@ function generateReceiptHTML(data: ReceiptData): string {
     <title>Donation Receipt - ${safeOrgName}</title>
     <style type="text/css">
       body { ${styles.body} }
-      /* Some styles are better in head for clients that support it, but primary styling is inline */
-      a { color: #007bff; text-decoration: none; }
+      a { color: #667eea; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      @media only screen and (max-width: 600px) {
+        .email-container { margin: 10px !important; }
+        .content-padding { padding: 20px !important; }
+        .header { padding: 30px 20px 25px !important; }
+        .org-name { font-size: 20px !important; }
+        .amount-value { font-size: 20px !important; }
+      }
     </style>
   </head>
   <body style="${styles.body}">
     <table cellpadding="0" cellspacing="0" border="0" style="${styles.emailWrapper}">
       <tr>
         <td align="center">
-          <div style="${styles.emailContainer}">
-            <div style="${styles.header}">
+          <div class="email-container" style="${styles.emailContainer}">
+            <!-- Clean Header -->
+            <div class="header" style="${styles.header}">
               ${orgLogoUrl ? `<img src="${orgLogoUrl}" alt="${safeOrgName} Logo" style="${styles.logo}" />` : ''}
-              <div style="${styles.orgName}">${safeOrgName}</div>
+              <div class="org-name" style="${styles.orgName}">${safeOrgName}</div>
               <div style="${styles.receiptSubject}">Donation Receipt</div>
             </div>
 
-            <div style="${styles.contentPadding}">
-              <p style="${styles.thankYouNote}">
-                Thank you for your generous contribution to ${safeOrgName}. Your support is greatly appreciated and helps us continue our mission.
-              </p>
+            <!-- Clean Thank You Message -->
+            <div class="content-padding" style="${styles.contentPadding}">
+              <div style="${styles.thankYouNote}">
+                <strong style="font-size: 18px; color: #495057;">Thank you for your generous support!</strong><br><br>
+                Your contribution to ${safeOrgName} makes a meaningful difference in our mission. We are grateful for your partnership and trust.
+              </div>
             </div>
 
-            <div style="padding: 0 30px 25px;">
-              <table cellpadding="0" cellspacing="0" border="0" style="${styles.detailsTable}">
-                <tr>
-                  <th style="${styles.detailsTh} width: 40%;">Donation Amount</th>
-                  <td style="${styles.detailsTd}"><span style="${styles.amountValue}">${data.donation.formattedAmount}</span></td>
-                </tr>
-                <tr>
-                  <th style="${styles.detailsTh}">Date of Donation</th>
-                  <td style="${styles.detailsTd}">${escapeHtml(data.donation.date)}</td>
-                </tr>
-                ${safeTaxId ? `
-                <tr>
-                  <th style="${styles.detailsTh}">Tax ID (EIN)</th>
-                  <td style="${styles.detailsTd}">${safeTaxId}</td>
-                </tr>
-                ` : ''}
-              </table>
+            <!-- Clean Details Section -->
+            <div style="padding: 0 30px 30px;">
+              <div style="${styles.detailsSection}">
+                <table cellpadding="0" cellspacing="0" border="0" style="${styles.detailsTable}">
+                  <!-- Featured Amount Row -->
+                  <tr>
+                    <td colspan="2" style="padding: 0;">
+                      <div style="${styles.amountRow}">
+                        <table cellpadding="0" cellspacing="0" border="0" style="width: 100%;">
+                          <tr>
+                            <td style="${styles.amountLabel}">Donation Amount</td>
+                            <td class="amount-value" style="${styles.amountValue}">${data.donation.formattedAmount}</td>
+                          </tr>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                  <!-- Spacing -->
+                  <tr><td colspan="2" style="padding: 8px 0; border: none;"></td></tr>
+                  <!-- Date Row -->
+                  <tr style="${styles.regularRow}">
+                    <td style="${styles.detailsTh}">Date of Donation</td>
+                    <td style="${styles.detailsTd}">${escapeHtml(data.donation.date)}</td>
+                  </tr>
+                  ${safeTaxId ? `
+                  <!-- Tax ID Row -->
+                  <tr style="${styles.regularRow}">
+                    <td style="${styles.detailsTh}">Tax ID (EIN)</td>
+                    <td style="${styles.detailsTd}">${safeTaxId}</td>
+                  </tr>
+                  ` : ''}
+                </table>
+              </div>
             </div>
 
+            <!-- Clean Footer -->
             <div style="${styles.footer}">
               ${orgContactEmail ? `<p style="${styles.footerP}">Questions? <a href="mailto:${orgContactEmail}" style="${styles.footerLink}">${orgContactEmail}</a></p>` : ''}
               ${orgWebsite ? `<p style="${styles.footerP}">Visit our website: <a href="${orgWebsite}" target="_blank" style="${styles.footerLink}">${orgWebsite}</a></p>` : ''}
-              <p style="${styles.footerP} margin-top:10px;">Powered by ShulPad</p>
+              <p style="${styles.footerP}">Powered by ShulPad</p>
             </div>
           </div>
         </td>
