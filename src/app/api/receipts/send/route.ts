@@ -524,28 +524,30 @@ function generateReceiptHTML(data: ReceiptData): string {
   const orgContactEmail = data.organization.contactEmail ? escapeHtml(data.organization.contactEmail) : '';
   const orgWebsite = data.organization.website ? escapeHtml(data.organization.website) : '';
 
-  // Define common styles to ensure consistency and reduce redundancy (applied inline)
- const styles = {
-  body: `font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6em; color: #333333; margin: 0; padding: 0; width: 100% !important; -webkit-font-smoothing: antialiased; background-color: #f4f4f7;`,
-  emailWrapper: `width: 100%; margin: 0; padding: 20px 0; background-color: #f4f4f7;`,
-  emailContainer: `max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden;`,
-  header: `padding: 30px 30px 20px; text-align: center; border-bottom: 1px solid #eeeeee;`,
-  logo: `max-height: 70px; max-width: 200px; margin-bottom: 20px;`,
-  orgName: `font-size: 26px; font-weight: bold; color: #222222; margin-bottom: 5px;`,
-  receiptSubject: `font-size: 17px; color: #555555; font-weight: 500;`,
-  contentPadding: `padding: 25px 30px;`,
-  thankYouNote: `font-size: 16px; color: #444444; margin-bottom: 25px; text-align: center; line-height: 1.6em;`,
+  // FIXED: Improved styles with consistent table alignment
+  const styles = {
+    body: `font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6em; color: #333333; margin: 0; padding: 0; width: 100% !important; -webkit-font-smoothing: antialiased; background-color: #f4f4f7;`,
+    emailWrapper: `width: 100%; margin: 0; padding: 20px 0; background-color: #f4f4f7;`,
+    emailContainer: `max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden;`,
+    header: `padding: 30px 30px 20px; text-align: center; border-bottom: 1px solid #eeeeee;`,
+    logo: `max-height: 70px; max-width: 200px; margin-bottom: 20px;`,
+    orgName: `font-size: 26px; font-weight: bold; color: #222222; margin-bottom: 5px;`,
+    receiptSubject: `font-size: 17px; color: #555555; font-weight: 500;`,
+    contentPadding: `padding: 25px 30px;`,
+    thankYouNote: `font-size: 16px; color: #444444; margin-bottom: 25px; text-align: center; line-height: 1.6em;`,
 
-  detailsTable: `width: 100%; margin-bottom: 25px; border-collapse: collapse;`,
-  detailsTh: `padding: 12px 0; text-align: left; font-weight: bold; color: #444444; border-bottom: 1px solid #dddddd; vertical-align: top;`,
-  detailsTd: `padding: 12px 0; text-align: right; color: #555555; border-bottom: 1px solid #dddddd; vertical-align: top;`,
-  // CHANGED: Reduced font size and adjusted styling
-  amountValue: `font-size: 18px; font-weight: 600; color: #2563eb;`, // Smaller, less bold, blue color
-  footer: `text-align: center; padding: 12px 30px; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888; background-color: #f9f9f9;`,
-  footerLink: `color: #007bff; text-decoration: none;`,
-  footerP: `margin: 5px 0;`
-};
-
+    // FIXED: Table styles with consistent alignment
+    detailsTable: `width: 100%; margin-bottom: 25px; border-collapse: collapse; table-layout: fixed;`,
+    detailsTh: `padding: 12px 0; text-align: left; font-weight: bold; color: #444444; border-bottom: 1px solid #dddddd; vertical-align: top; width: 40%;`,
+    detailsTd: `padding: 12px 0; text-align: right; color: #555555; border-bottom: 1px solid #dddddd; vertical-align: top; width: 60%;`,
+    
+    // FIXED: Amount styling that works within table constraints
+    amountValue: `font-size: 18px; font-weight: 600; color: #2563eb; display: inline-block;`,
+    
+    footer: `text-align: center; padding: 12px 30px; border-top: 1px solid #eeeeee; font-size: 12px; color: #888888; background-color: #f9f9f9;`,
+    footerLink: `color: #007bff; text-decoration: none;`,
+    footerP: `margin: 5px 0;`
+  };
 
   return `
   <!DOCTYPE html>
@@ -556,8 +558,10 @@ function generateReceiptHTML(data: ReceiptData): string {
     <title>Donation Receipt - ${safeOrgName}</title>
     <style type="text/css">
       body { ${styles.body} }
-      /* Some styles are better in head for clients that support it, but primary styling is inline */
       a { color: #007bff; text-decoration: none; }
+      /* FIXED: Additional table styles for better email client compatibility */
+      table { border-collapse: collapse; }
+      td, th { border: 0; }
     </style>
   </head>
   <body style="${styles.body}">
@@ -578,10 +582,13 @@ function generateReceiptHTML(data: ReceiptData): string {
             </div>
 
             <div style="padding: 0 30px 25px;">
+              <!-- FIXED: Improved table structure with proper cell sizing -->
               <table cellpadding="0" cellspacing="0" border="0" style="${styles.detailsTable}">
                 <tr>
-                  <th style="${styles.detailsTh} width: 40%;">Donation Amount</th>
-                  <td style="${styles.detailsTd}"><span style="${styles.amountValue}">${data.donation.formattedAmount}</span></td>
+                  <th style="${styles.detailsTh}">Donation Amount</th>
+                  <td style="${styles.detailsTd}">
+                    <span style="${styles.amountValue}">${data.donation.formattedAmount}</span>
+                  </td>
                 </tr>
                 <tr>
                   <th style="${styles.detailsTh}">Date of Donation</th>
@@ -599,7 +606,7 @@ function generateReceiptHTML(data: ReceiptData): string {
             <div style="${styles.footer}">
               ${orgContactEmail ? `<p style="${styles.footerP}">Questions? <a href="mailto:${orgContactEmail}" style="${styles.footerLink}">${orgContactEmail}</a></p>` : ''}
               ${orgWebsite ? `<p style="${styles.footerP}">Visit our website: <a href="${orgWebsite}" target="_blank" style="${styles.footerLink}">${orgWebsite}</a></p>` : ''}
-              <p style="${styles.footerP} margin-top:10px;">Powered by ShulPad</p>
+              <p style="${styles.footerP}" style="margin-top:10px;">Powered by CharityPad</p>
             </div>
           </div>
         </td>
