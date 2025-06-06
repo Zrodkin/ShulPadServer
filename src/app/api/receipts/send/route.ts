@@ -461,8 +461,8 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
     const msg = {
       to: receiptData.donor.email,
       from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'hello@charitypad.com', // More generic if used by many
-        name: orgSettings.name
+        email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com', // More generic if used by many
+        name: 'ShulPad'
       },
       subject: 'Thank You For Your Donation!', // <-- SUBJECT LINE CHANGED
       text: textContent,
