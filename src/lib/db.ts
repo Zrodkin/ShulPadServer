@@ -1,15 +1,37 @@
 import { Pool } from "pg"
 
-// Database connection pool
-let pool: Pool
+// Database connection pool - safer typing
+let pool: Pool | undefined
 
 // Make sure to export the function
-export function createClient() {
+export function createClient(): Pool {
   if (!pool) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-    })
+    // Validate environment variable
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL environment variable is required')
+    }
+
+    try {
+      pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+        
+        // ✅ ADD: Basic serverless optimizations (minimal changes)
+        max: 5,  // Reduced from default 10 for serverless
+        connectionTimeoutMillis: 5000,  // 5 second timeout for new connections
+        idleTimeoutMillis: 30000,  // Keep default 30 seconds
+      })
+      
+      pool.on('error', (err) => {
+        console.error('Database pool error:', err)
+        // Don't set pool to undefined - would break subsequent requests
+      })
+      
+      console.log('Database pool created successfully')
+    } catch (error) {
+      console.error('Failed to create database pool:', error)
+      throw new Error(`Database connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   return pool
@@ -58,10 +80,23 @@ export async function initializeDatabase() {
       ON square_pending_tokens(state);
     `)
 
-    console.log("Database schema initialized")
+    console.log("Database schema initialized successfully")
   } catch (error) {
     console.error("Error initializing database schema:", error)
+    throw error  // Re-throw so caller knows initialization failed
   } finally {
-    client.release()
+    client.release()  // ✅ This is correct - release client, not pool
+  }
+}
+
+// ✅ ADD: Simple health check (optional but useful for debugging)
+export async function isHealthy(): Promise<boolean> {
+  try {
+    const db = createClient()
+    const result = await db.query('SELECT 1 as health')
+    return result.rows.length > 0
+  } catch (error) {
+    console.error('Database health check failed:', error)
+    return false
   }
 }

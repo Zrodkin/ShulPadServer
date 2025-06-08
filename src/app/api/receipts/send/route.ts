@@ -229,16 +229,7 @@ export async function POST(request: NextRequest) {
       error: "Internal server error",
       receipt_id: receiptLogId
     }, { status: 500 })
-  } finally {
-    try {
-      // Ensure db.end is only called if db client was initialized successfully
-      if (db && typeof db.end === 'function') {
-        await db.end()
-      }
-    } catch (dbCloseError) {
-      logger.warn("Error closing database connection", { error: dbCloseError })
-    }
-  }
+  } 
 }
 
 // Validation function

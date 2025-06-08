@@ -80,9 +80,7 @@ export async function POST(request: NextRequest) {
     } catch (dbError) {
       logger.error(`Database error updating preset amounts for organization ${organization_id}`, { error: dbError });
       return NextResponse.json({ error: "Failed to update preset amounts" }, { status: 500 });
-    } finally {
-      await db.end();
-    }
+    } 
   } catch (error) {
     logger.error("Error processing preset amounts update", { error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

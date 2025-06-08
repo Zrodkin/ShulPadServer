@@ -143,7 +143,7 @@ async function syncPresetAmountsForAllOrganizations(forceSynchronization: boolea
     logger.error('Error in sync process', { error });
     throw error;
   } finally {
-    await db.end();
+    
   }
   
   return results;
@@ -232,7 +232,7 @@ async function syncPresetAmountsForOrganization(organizationId: string, forceSyn
       reason: error instanceof Error ? error.message : String(error)
     });
   } finally {
-    await db.end();
+    
   }
   
   return results;
