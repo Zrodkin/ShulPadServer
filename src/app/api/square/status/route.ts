@@ -4,23 +4,20 @@ import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import { normalizeOrganizationId } from "@/lib/organizationUtils" 
 
-
-
-
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-  const rawOrganizationId = searchParams.get("organization_id")
-let organizationId = rawOrganizationId
+    const rawOrganizationId = searchParams.get("organization_id")
+    let organizationId = rawOrganizationId
     const state = searchParams.get("state")
     const deviceId = searchParams.get("device_id") // NEW: Add device_id
 
     logger.info("Status check requested", { 
-  rawOrganizationId, 
-  normalizedOrganizationId: organizationId, 
-  state, 
-  deviceId 
-})
+      rawOrganizationId, 
+      normalizedOrganizationId: organizationId, 
+      state, 
+      deviceId 
+    })
 
     const db = createClient()
 
@@ -97,27 +94,38 @@ let organizationId = rawOrganizationId
 
     // Path 2: Checking by organization ID (normal status check)
     else if (organizationId) {
-logger.debug("Checking authorization status by organization ID", { 
-  rawOrganizationId, 
-  normalizedOrganizationId: organizationId 
-})
+      logger.debug("Checking authorization status by organization ID", { 
+        rawOrganizationId, 
+        normalizedOrganizationId: organizationId 
+      })
+      
       const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
       const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
       // Get the access token from the database
       let result = await db.query(
-  "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id = $1",
-  [organizationId],
-)
+        "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id = $1",
+        [organizationId],
+      )
 
       if (result.rows.length === 0 && rawOrganizationId && rawOrganizationId.includes('_')) {
-  const baseOrgId = rawOrganizationId.split('_')[0]
-  result = await db.query(
-    "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id LIKE $1",
-    [`${baseOrgId}_%`],
-  )
-}
+        const baseOrgId = rawOrganizationId.split('_')[0]
+        result = await db.query(
+          "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id LIKE $1",
+          [`${baseOrgId}_%`],
+        )
+      }
 
+      // ✅ FIX: Check if we have any results before destructuring
+      if (result.rows.length === 0) {
+        logger.info("No Square connection found for organization", { organizationId })
+        return NextResponse.json({
+          connected: false,
+          message: "No Square connection found for this organization"
+        })
+      }
+
+      // ✅ FIX: Now safe to destructure since we know result.rows[0] exists
       const { access_token, refresh_token, expires_at, merchant_id, location_id } = result.rows[0]
 
       // Check if token is expired
