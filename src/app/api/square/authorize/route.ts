@@ -9,6 +9,8 @@ export async function GET(request: Request) {
     const organizationId = url.searchParams.get("organization_id") || "default"
     const deviceId = url.searchParams.get("device_id")
 
+    logger.info("🚀 Authorize endpoint called", { organizationId, deviceId })
+
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const REDIRECT_URI = process.env.REDIRECT_URI
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
@@ -20,15 +22,14 @@ export async function GET(request: Request) {
 
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
-    // ✅ UPDATED: Added missing OAuth scopes for complete donation system functionality
     const scopes = [
-      "MERCHANT_PROFILE_READ",    // For merchant info and locations
-      "PAYMENTS_WRITE",           // For processing payments  
-      "PAYMENTS_WRITE_IN_PERSON", // For in-person payments with Square hardware
-      "PAYMENTS_READ",            // For reading payment details
-      "ITEMS_READ",               // ❌ WAS MISSING - Required for fetching preset donation amounts
-      "ITEMS_WRITE",              // ❌ WAS MISSING - Required for managing preset donation catalog  
-      "ORDERS_WRITE"              // ❌ WAS MISSING - Required for creating donation orders
+      "MERCHANT_PROFILE_READ",
+      "PAYMENTS_WRITE",
+      "PAYMENTS_WRITE_IN_PERSON", 
+      "PAYMENTS_READ",
+      "ITEMS_READ",
+      "ITEMS_WRITE",
+      "ORDERS_WRITE"
     ]
 
     const state = uuidv4()
@@ -36,33 +37,34 @@ export async function GET(request: Request) {
     // Store the state in the database BEFORE returning it to the client
     try {
       const db = createClient()
-      // Explicitly provide NULL values for all columns that might have NOT NULL constraints
-      await db.query(
-  `INSERT INTO square_pending_tokens (
-    state, 
-    device_id,
-    access_token, 
-    refresh_token, 
-    merchant_id, 
-    expires_at, 
-    created_at
-  ) VALUES (
-    $1, 
-    $2,    
-    NULL, 
-    NULL, 
-    NULL, 
-    NULL, 
-    NOW()
-  ) ON CONFLICT (state) DO NOTHING`,
-  [state, deviceId]
-)
-      logger.info("Stored pending token state with device", { state, deviceId })
-    } catch (dbError) {
-      logger.error("Database error storing state", { error: dbError })
-      // Continue even if storage fails
       
-      // Add more detailed error logging to help diagnose the issue
+      // ✅ FIX: Simplified insert without complex conflict handling
+      await db.query(
+        `INSERT INTO square_pending_tokens (
+          state, 
+          device_id,
+          access_token, 
+          refresh_token, 
+          merchant_id, 
+          expires_at, 
+          created_at
+        ) VALUES (
+          $1, 
+          $2,    
+          NULL, 
+          NULL, 
+          NULL, 
+          NULL, 
+          NOW()
+        )`,
+        [state, deviceId]
+      )
+      
+      logger.info("✅ Stored pending token state", { state, deviceId })
+    } catch (dbError) {
+      logger.error("❌ Database error storing state", { error: dbError })
+      
+      // Continue even if storage fails, but log the error
       if (dbError instanceof Error) {
         logger.error("Database error details", {
           message: dbError.message,
@@ -77,19 +79,20 @@ export async function GET(request: Request) {
       `client_id=${SQUARE_APP_ID}` +
       `&scope=${scopes.join("+")}` +
       `&state=${state}` +
-      `&session=false` + // Added this required parameter
+      `&session=false` +
       `&redirect_uri=${REDIRECT_URI}` +
       (organizationId ? `&organization_id=${organizationId}` : "")
 
-    logger.info("Generated OAuth URL with updated scopes", { 
+    logger.info("✅ Generated OAuth URL", { 
       state, 
       organizationId, 
+      deviceId,
       scopes: scopes.join("+") 
     })
     
     return NextResponse.json({ authUrl, state })
   } catch (error) {
-    logger.error("Error generating auth URL", { error })
+    logger.error("❌ Error generating auth URL", { error })
     return NextResponse.json({ error: "Failed to generate authorization URL" }, { status: 500 })
   }
 }
