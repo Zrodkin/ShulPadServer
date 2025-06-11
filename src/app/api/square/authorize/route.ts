@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     NULL, 
     NULL, 
     NOW()
-  ) ON CONFLICT (state, device_id) DO NOTHING`,
+  ) ON CONFLICT (state) DO NOTHING`,
   [state, deviceId]
 )
       logger.info("Stored pending token state with device", { state, deviceId })
