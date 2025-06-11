@@ -8,19 +8,20 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const organizationId = searchParams.get("organization_id")
     const state = searchParams.get("state")
+    const deviceId = searchParams.get("device_id") // NEW: Add device_id
 
-    logger.info("Status check requested", { organizationId, state })
+    logger.info("Status check requested", { organizationId, state, deviceId })
 
     const db = createClient()
 
     // Path 1: Checking by state parameter (for OAuth flow tracking)
     if (state) {
-      logger.debug("Checking authorization status by state", { state })
+      logger.debug("Checking authorization status by state", { state, deviceId })
 
-      // Get pending tokens from temporary storage
+      // UPDATE: Include device_id in pending tokens query
       const pendingResult = await db.query(
-        "SELECT access_token, refresh_token, merchant_id, location_id, location_data, expires_at FROM square_pending_tokens WHERE state = $1",
-        [state],
+        "SELECT access_token, refresh_token, merchant_id, location_id, location_data, expires_at FROM square_pending_tokens WHERE state = $1 AND (device_id = $2 OR device_id IS NULL)",
+        [state, deviceId]
       )
 
       if (pendingResult.rows.length > 0) {

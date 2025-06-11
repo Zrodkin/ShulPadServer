@@ -6,14 +6,14 @@ import { logger } from "@/lib/logger"
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organization_id } = body
+    const { organization_id, device_id } = body // NEW: Extract device_id
 
     if (!organization_id) {
       logger.error("Organization ID is required for disconnect")
       return NextResponse.json({ error: "Organization ID is required" }, { status: 400 })
     }
 
-    logger.info("Disconnect requested", { organization_id })
+    logger.info("Disconnect requested", { organization_id, device_id })
 
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
@@ -77,6 +77,14 @@ export async function POST(request: NextRequest) {
         // Delete from square_connections
         await client.query("DELETE FROM square_connections WHERE organization_id = $1", [organization_id])
         
+        // ALSO: Clean up any pending tokens for this device
+    if (device_id) {
+      await client.query(
+        "DELETE FROM square_pending_tokens WHERE device_id = $1", 
+        [device_id]
+      )
+    }
+    
         // Also clean up any pending tokens for this organization
         await client.query("DELETE FROM square_pending_tokens WHERE state LIKE $1", [`%${organization_id}%`])
         

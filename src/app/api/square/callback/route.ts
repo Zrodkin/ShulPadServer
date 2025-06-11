@@ -8,9 +8,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get("code")
     const state = searchParams.get("state")
+    const deviceId = searchParams.get("device_id") // NEW: Get device_id if passed
     let organizationId = searchParams.get("organization_id") || "default"
 
-    logger.info("Received OAuth callback", { state, hasCode: !!code, hasOrgId: !!organizationId })
+    logger.info("Received OAuth callback", { state, hasCode: !!code, hasOrgId: !!organizationId, deviceId })
 
     if (!code) {
       logger.error("Authorization code is missing")

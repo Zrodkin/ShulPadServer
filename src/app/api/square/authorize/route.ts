@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
     const organizationId = url.searchParams.get("organization_id") || "default"
+    const deviceId = url.searchParams.get("device_id")
 
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const REDIRECT_URI = process.env.REDIRECT_URI
@@ -39,6 +40,7 @@ export async function GET(request: Request) {
       await db.query(
         `INSERT INTO square_pending_tokens (
           state, 
+          device_id,
           access_token, 
           refresh_token, 
           merchant_id, 
@@ -52,9 +54,9 @@ export async function GET(request: Request) {
           NULL, 
           NOW()
         ) ON CONFLICT (state) DO NOTHING`,
-        [state]
+        [state, deviceId]
       )
-      logger.info("Stored pending token state", { state })
+      logger.info("Stored pending token state with device", { state, deviceId })
     } catch (dbError) {
       logger.error("Database error storing state", { error: dbError })
       // Continue even if storage fails

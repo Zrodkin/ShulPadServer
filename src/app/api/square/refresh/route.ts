@@ -6,9 +6,9 @@ import { logger } from "@/lib/logger"
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organization_id, refresh_token } = body
+    const { organization_id, refresh_token, device_id } = body // NEW: Extract device_id
 
-    logger.info("Token refresh requested", { organization_id })
+    logger.info("Token refresh requested", { organization_id, device_id })
 
     // If refresh_token is provided, use it directly
     // Otherwise, look it up in the database using organization_id
