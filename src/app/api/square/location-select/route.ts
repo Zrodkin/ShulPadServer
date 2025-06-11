@@ -124,26 +124,18 @@ export async function POST(request: NextRequest) {
 
     try {
       // Store in permanent connections table with selected location
-      await db.query(
-        `INSERT INTO square_connections (
-          organization_id, 
-          merchant_id,
-          location_id,
-          access_token, 
-          refresh_token, 
-          expires_at, 
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        ON CONFLICT (organization_id) 
-        DO UPDATE SET 
-          merchant_id = $2,
-          location_id = $3,
-          access_token = $4,
-          refresh_token = $5,
-          expires_at = $6,
-          updated_at = NOW()`,
-        [organization_id, merchant_id, location_id, access_token, refresh_token, expires_at]
-      )
+    await db.query(
+  `INSERT INTO square_connections (
+    organization_id, 
+    merchant_id,
+    location_id,
+    access_token, 
+    refresh_token, 
+    expires_at, 
+    created_at
+  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+  [organization_id, merchant_id, location_id, access_token, refresh_token, expires_at]
+)
 
       // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
       // This allows iOS polling to find the final state

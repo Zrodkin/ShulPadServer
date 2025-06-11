@@ -162,26 +162,18 @@ export async function GET(request: NextRequest) {
           )
 
           // Store in permanent table
-          await db.query(
-            `INSERT INTO square_connections (
-              organization_id, 
-              merchant_id,
-              location_id,
-              access_token, 
-              refresh_token, 
-              expires_at, 
-              created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-            ON CONFLICT (organization_id) 
-            DO UPDATE SET 
-              merchant_id = $2,
-              location_id = $3,
-              access_token = $4,
-              refresh_token = $5,
-              expires_at = $6,
-              updated_at = NOW()`,
-            [organizationId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
-          )
+        await db.query(
+  `INSERT INTO square_connections (
+    organization_id, 
+    merchant_id,
+    location_id,
+    access_token, 
+    refresh_token, 
+    expires_at, 
+    created_at
+  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+  [organizationId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
+)
 
           await db.query("COMMIT")
           logger.info("Single location setup completed", { 
