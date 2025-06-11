@@ -37,7 +37,7 @@ export function createClient(): Pool {
   return pool
 }
 
-// Initialize database schema
+// Updated src/lib/db.ts - initializeDatabase function
 export async function initializeDatabase() {
   const client = await createClient().connect()
 
@@ -46,7 +46,7 @@ export async function initializeDatabase() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS square_connections (
         id SERIAL PRIMARY KEY,
-        organization_id TEXT UNIQUE NOT NULL,
+        organization_id TEXT UNIQUE NOT NULL,  -- ✅ ADDED UNIQUE constraint here
         merchant_id TEXT NOT NULL,
         location_id TEXT NOT NULL,
         access_token TEXT NOT NULL,
@@ -56,7 +56,7 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
       
-      -- Create index for faster lookups
+      -- Create index for faster lookups (this is still useful for performance)
       CREATE INDEX IF NOT EXISTS idx_square_connections_organization_id 
       ON square_connections(organization_id);
     `)
@@ -72,6 +72,7 @@ export async function initializeDatabase() {
         location_id TEXT,
         expires_at TIMESTAMP,
         obtained BOOLEAN DEFAULT FALSE,
+        device_id TEXT,  -- ✅ Added device_id field
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
       
@@ -83,9 +84,9 @@ export async function initializeDatabase() {
     console.log("Database schema initialized successfully")
   } catch (error) {
     console.error("Error initializing database schema:", error)
-    throw error  // Re-throw so caller knows initialization failed
+    throw error
   } finally {
-    client.release()  // ✅ This is correct - release client, not pool
+    client.release()
   }
 }
 
