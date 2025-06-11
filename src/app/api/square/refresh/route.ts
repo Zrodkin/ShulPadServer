@@ -2,29 +2,19 @@ import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
-
-// Add this helper function after imports
-function normalizeOrganizationId(orgId: string): string {
-  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
-  // Extract just the base part "default"
-  if (orgId && orgId.includes('_') && orgId.length > 20) {
-    const parts = orgId.split('_');
-    return parts[0]; // Return "default" from "default_DEVICEID"
-  }
-  return orgId;
-}
+import { normalizeOrganizationId } from "@/lib/organizationUtils"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organization_id, refresh_token, device_id } = body // NEW: Extract device_id
-    const normalizedOrgId = organization_id ? normalizeOrganizationId(organization_id) : null
+    const { organization_id, refresh_token, device_id } = body
+    let normalizedOrgId = organization_id // Changed from const to let
 
     logger.info("Token refresh requested", { 
-  rawOrganizationId: organization_id, 
-  normalizedOrganizationId: normalizedOrgId, 
-  device_id 
-})
+      rawOrganizationId: organization_id, 
+      normalizedOrganizationId: normalizedOrgId, 
+      device_id 
+    })
 
     // If refresh_token is provided, use it directly
     // Otherwise, look it up in the database using organization_id
@@ -33,12 +23,24 @@ export async function POST(request: NextRequest) {
     if (!tokenToUse && organization_id) {
       try {
         const db = createClient()
-        const result = await db.query("SELECT refresh_token FROM square_connections WHERE organization_id = $1", [
-  normalizedOrgId,
-])
+        
+        // First try exact match
+        let result = await db.query("SELECT refresh_token, merchant_id FROM square_connections WHERE organization_id = $1", [
+          organization_id,
+        ])
 
+        if (result.rows.length === 0 && organization_id.includes('_')) {
+          const baseOrgId = organization_id.split('_')[0]
+          result = await db.query("SELECT refresh_token, merchant_id FROM square_connections WHERE organization_id LIKE $1", [
+            `${baseOrgId}_%`,
+          ])
+        }
+        
         if (result.rows.length > 0) {
           tokenToUse = result.rows[0].refresh_token
+          // Use the actual merchant_id for proper normalization in the update
+          const merchantId = result.rows[0].merchant_id
+          normalizedOrgId = normalizeOrganizationId(organization_id, merchantId)
           logger.debug("Retrieved refresh token from database", { organization_id })
         } else {
           logger.warn("No refresh token found for organization", { organization_id })
@@ -48,7 +50,7 @@ export async function POST(request: NextRequest) {
         logger.error("Database error", { error: dbError })
         return NextResponse.json({ error: "Database error while retrieving refresh token" }, { status: 500 })
       }
-    }
+    } // Added missing closing brace
 
     if (!tokenToUse) {
       logger.warn("No refresh token provided")
@@ -104,12 +106,12 @@ export async function POST(request: NextRequest) {
         try {
           await db.query(
             `UPDATE square_connections 
-           SET access_token = $1, 
-               refresh_token = $2, 
-               expires_at = $3, 
-               updated_at = NOW() 
-           WHERE organization_id = $4`,
-[data.access_token, data.refresh_token, data.expires_at, normalizedOrgId],
+             SET access_token = $1, 
+                 refresh_token = $2, 
+                 expires_at = $3, 
+                 updated_at = NOW() 
+             WHERE organization_id = $4`,
+            [data.access_token, data.refresh_token, data.expires_at, normalizedOrgId],
           )
 
           await db.query("COMMIT")

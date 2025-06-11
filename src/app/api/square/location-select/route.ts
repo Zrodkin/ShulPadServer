@@ -3,17 +3,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
+import { normalizeOrganizationId } from "@/lib/organizationUtils"
 
-// Add this helper function after imports
-function normalizeOrganizationId(orgId: string): string {
-  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
-  // Extract just the base part "default"
-  if (orgId && orgId.includes('_') && orgId.length > 20) {
-    const parts = orgId.split('_');
-    return parts[0]; // Return "default" from "default_DEVICEID"
-  }
-  return orgId;
-}
 
 interface SquareLocation {
   id: string;
@@ -139,6 +130,9 @@ export async function POST(request: NextRequest) {
 
     try {
       // Store in permanent connections table with selected location
+    const normalizedOrgId = normalizeOrganizationId(organization_id, merchant_id);
+      
+      // Store in permanent connections table with selected location
     await db.query(
   `INSERT INTO square_connections (
     organization_id, 
@@ -148,8 +142,16 @@ export async function POST(request: NextRequest) {
     refresh_token, 
     expires_at, 
     created_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-[normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at])
+  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+  ON CONFLICT (organization_id) DO UPDATE SET
+    merchant_id = EXCLUDED.merchant_id,
+    location_id = EXCLUDED.location_id,
+    access_token = EXCLUDED.access_token,
+    refresh_token = EXCLUDED.refresh_token,
+    expires_at = EXCLUDED.expires_at,
+    updated_at = NOW()`,
+  [normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at]
+)
 
       // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
       // This allows iOS polling to find the final state

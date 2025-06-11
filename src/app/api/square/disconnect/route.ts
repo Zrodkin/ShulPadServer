@@ -2,124 +2,91 @@ import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
-
-// Add this helper function after imports
-function normalizeOrganizationId(orgId: string): string {
-  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
-  // Extract just the base part "default"
-  if (orgId && orgId.includes('_') && orgId.length > 20) {
-    const parts = orgId.split('_');
-    return parts[0]; // Return "default" from "default_DEVICEID"
-  }
-  return orgId;
-}
+import { normalizeOrganizationId } from "@/lib/organizationUtils"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organization_id, device_id } = body // NEW: Extract device_id
-    const normalizedOrgId = organization_id ? normalizeOrganizationId(organization_id) : null
+    const { organization_id, device_id, disconnect_all_devices = false } = body
 
     if (!organization_id) {
       logger.error("Organization ID is required for disconnect")
       return NextResponse.json({ error: "Organization ID is required" }, { status: 400 })
     }
 
-    logger.info("Disconnect requested", { organization_id, device_id })
+    logger.info("Disconnect requested", { organization_id, device_id, disconnect_all_devices })
 
-    const SQUARE_APP_ID = process.env.SQUARE_APP_ID
-    const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
-
-    if (!SQUARE_APP_ID || !SQUARE_APP_SECRET) {
-      logger.error("Missing required environment variables")
-      return NextResponse.json({ error: "Missing required environment variables" }, { status: 500 })
-    }
-
-    // Get the access token from the database
     const db = createClient()
-    let client
+    const client = await db.connect()
     
     try {
-      // Get connection
-      client = await db.connect()
+      await client.query("BEGIN")
       
-      const result = await client.query("SELECT access_token FROM square_connections WHERE organization_id = $1", [
-  normalizedOrgId,
-])
-
-      if (result.rows.length === 0) {
-        logger.warn("No Square connection found for this organization", { organization_id })
-        // Even if no connection exists, consider this a "success" to avoid client-side errors
-        return NextResponse.json({ success: true, message: "No connection to disconnect" })
-      }
-
-      const access_token = result.rows[0].access_token
-
-      const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
-      const SQUARE_REVOKE_URL = `https://connect.${SQUARE_DOMAIN}/oauth2/revoke`
-
-      try {
-        // Revoke the token
-        await axios.post(
-          SQUARE_REVOKE_URL,
-          {
-            client_id: SQUARE_APP_ID,
-            access_token: access_token,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Client ${SQUARE_APP_SECRET}`,
-            },
-          },
+      if (disconnect_all_devices) {
+        // FULL DISCONNECT - like the original behavior
+        // Get the access token and revoke it
+const normalizedOrgId = normalizeOrganizationId(organization_id)
+        const result = await client.query(
+          "SELECT access_token, merchant_id FROM square_connections WHERE organization_id = $1", 
+          [normalizedOrgId]
         )
-        
-        logger.info("Token successfully revoked with Square API", { organization_id })
-      } catch (revokeError) {
-        // Log the error but continue to remove the connection from the database
-        logger.error("Error revoking token with Square API", { error: revokeError, organization_id })
-      }
 
-      // Remove the connection from the database
-      try {
-        // Use a transaction for data consistency
-        await client.query("BEGIN")
-        
-        // Delete from square_connections
-await client.query("DELETE FROM square_connections WHERE organization_id = $1", [normalizedOrgId])        
-        // ALSO: Clean up any pending tokens for this device
-    if (device_id) {
-      await client.query(
-        "DELETE FROM square_pending_tokens WHERE device_id = $1", 
-        [device_id]
-      )
-    }
-
-        // Also clean up any pending tokens for this organization
-        await client.query("DELETE FROM square_pending_tokens WHERE state LIKE $1", [`%${organization_id}%`])
-        
-        await client.query("COMMIT")
-        
-        logger.info("Connection records deleted from database", { organization_id })
-      } catch (dbError) {
-        // Roll back on database error
-        try {
-          await client.query("ROLLBACK")
-        } catch (_) {}
-        
-        logger.error("Database error during disconnect", { error: dbError, organization_id })
-        return NextResponse.json({ error: "Database error during disconnection" }, { status: 500 })
+        if (result.rows.length > 0) {
+          const { access_token, merchant_id } = result.rows[0]
+          
+          // Create proper normalized org ID with merchant_id
+          const properNormalizedOrgId = normalizeOrganizationId(organization_id, merchant_id)
+          
+          // Revoke token with Square
+          try {
+            const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
+            const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
+            
+            await axios.post(`https://connect.${SQUARE_DOMAIN}/oauth2/revoke`, {
+              client_id: process.env.SQUARE_APP_ID,
+              access_token: access_token,
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Client ${process.env.SQUARE_APP_SECRET}`,
+              },
+            })
+            logger.info("Token revoked with Square", { organization_id })
+          } catch (revokeError) {
+            logger.error("Failed to revoke token with Square", { error: revokeError })
+          }
+          
+          // Delete connection from database
+          await client.query("DELETE FROM square_connections WHERE organization_id = $1", [properNormalizedOrgId])
+        }
       }
+      
+      // Always clean up device-specific pending tokens
+      if (device_id) {
+        await client.query("DELETE FROM square_pending_tokens WHERE device_id = $1", [device_id])
+      }
+      
+      // Clean up pending tokens for this organization
+      await client.query("DELETE FROM square_pending_tokens WHERE state LIKE $1", [`%${organization_id}%`])
+      
+      await client.query("COMMIT")
+      
+      const message = disconnect_all_devices 
+        ? "All devices disconnected from Square account"
+        : "Device disconnected. Other devices remain connected."
+        
+      logger.info("Disconnection successful", { organization_id, disconnect_all_devices })
+      
+    } catch (dbError) {
+      await client.query("ROLLBACK")
+      logger.error("Database error during disconnect", { error: dbError })
+      return NextResponse.json({ error: "Database error during disconnection" }, { status: 500 })
     } finally {
-      // Release the client back to the pool if it exists
-      if (client) {
-        client.release()
-      }
+      client.release()
     }
 
-    logger.info("Disconnection successful", { organization_id })
     return NextResponse.json({ success: true })
+    
   } catch (error) {
     logger.error("Server error during disconnect", { error })
     return NextResponse.json({ error: "Server error during disconnection" }, { status: 500 })

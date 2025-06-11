@@ -2,23 +2,16 @@ import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
+import { normalizeOrganizationId } from "@/lib/organizationUtils" 
 
-// Add this helper function after imports
-function normalizeOrganizationId(orgId: string): string {
-  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
-  // Extract just the base part "default"
-  if (orgId && orgId.includes('_') && orgId.length > 20) {
-    const parts = orgId.split('_');
-    return parts[0]; // Return "default" from "default_DEVICEID"
-  }
-  return orgId;
-}
+
+
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const rawOrganizationId = searchParams.get("organization_id")
-const organizationId = rawOrganizationId ? normalizeOrganizationId(rawOrganizationId) : null
+  const rawOrganizationId = searchParams.get("organization_id")
+let organizationId = rawOrganizationId
     const state = searchParams.get("state")
     const deviceId = searchParams.get("device_id") // NEW: Add device_id
 
@@ -112,18 +105,18 @@ logger.debug("Checking authorization status by organization ID", {
       const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
       // Get the access token from the database
-      const result = await db.query(
-        "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id = $1",
-        [organizationId],
-      )
+      let result = await db.query(
+  "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id = $1",
+  [organizationId],
+)
 
-      if (result.rows.length === 0) {
-        logger.info("No Square connection found for organization", { organizationId })
-        return NextResponse.json({
-          connected: false,
-          message: "No Square connection found",
-        })
-      }
+      if (result.rows.length === 0 && rawOrganizationId && rawOrganizationId.includes('_')) {
+  const baseOrgId = rawOrganizationId.split('_')[0]
+  result = await db.query(
+    "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id LIKE $1",
+    [`${baseOrgId}_%`],
+  )
+}
 
       const { access_token, refresh_token, expires_at, merchant_id, location_id } = result.rows[0]
 

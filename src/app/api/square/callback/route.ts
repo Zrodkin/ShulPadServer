@@ -2,17 +2,9 @@ import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
+import { normalizeOrganizationId } from "@/lib/organizationUtils"
 
-// Add this helper function after imports
-function normalizeOrganizationId(orgId: string): string {
-  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
-  // Extract just the base part "default"
-  if (orgId && orgId.includes('_') && orgId.length > 20) {
-    const parts = orgId.split('_');
-    return parts[0]; // Return "default" from "default_DEVICEID"
-  }
-  return orgId;
-}
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -182,6 +174,8 @@ const stateResult = await db.query(
           )
 
           // Store in permanent table
+  const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id);
+        
         await db.query(
   `INSERT INTO square_connections (
     organization_id, 
@@ -191,8 +185,15 @@ const stateResult = await db.query(
     refresh_token, 
     expires_at, 
     created_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-  [organizationId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
+  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+  ON CONFLICT (organization_id) DO UPDATE SET
+    merchant_id = EXCLUDED.merchant_id,
+    location_id = EXCLUDED.location_id,
+    access_token = EXCLUDED.access_token,
+    refresh_token = EXCLUDED.refresh_token,
+    expires_at = EXCLUDED.expires_at,
+    updated_at = NOW()`,
+  [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
 )
 
           await db.query("COMMIT")
