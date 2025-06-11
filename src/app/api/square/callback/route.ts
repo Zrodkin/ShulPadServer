@@ -37,21 +37,27 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
     const db = createClient()
 
     // Validate that the state exists in our database
-    try {
-const stateResult = await db.query(
-  "SELECT state FROM square_pending_tokens WHERE state = $1 AND (device_id = $2 OR device_id IS NULL)", 
-  [state, deviceId]
-)
-      if (stateResult.rows.length === 0) {
-        logger.error("Invalid state parameter received", { state })
-        return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_state`)
-      }
+  try {
+  const stateResult = await db.query(
+    "SELECT state, device_id FROM square_pending_tokens WHERE state = $1", 
+    [state]
+  )
+  
+  if (stateResult.rows.length === 0) {
+    logger.error("Invalid state parameter received", { state })
+    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_state`)
+  }
 
-      logger.debug("State validation successful", { state })
-    } catch (dbError) {
-      logger.error("Database error during state validation", { error: dbError })
-      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=database_error`)
-    }
+  // Get the device_id that was originally stored with this state
+  const storedDeviceId = stateResult.rows[0].device_id
+  logger.debug("State validation successful", { state, storedDeviceId })
+  
+  // Use storedDeviceId for any subsequent device-specific operations
+  
+} catch (dbError) {
+  logger.error("Database error during state validation", { error: dbError })
+  return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=database_error`)
+}
 
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
