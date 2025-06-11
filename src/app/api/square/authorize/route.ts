@@ -38,24 +38,25 @@ export async function GET(request: Request) {
       const db = createClient()
       // Explicitly provide NULL values for all columns that might have NOT NULL constraints
       await db.query(
-        `INSERT INTO square_pending_tokens (
-          state, 
-          device_id,
-          access_token, 
-          refresh_token, 
-          merchant_id, 
-          expires_at, 
-          created_at
-        ) VALUES (
-          $1, 
-          NULL, 
-          NULL, 
-          NULL, 
-          NULL, 
-          NOW()
-        ) ON CONFLICT (state) DO NOTHING`,
-        [state, deviceId]
-      )
+  `INSERT INTO square_pending_tokens (
+    state, 
+    device_id,
+    access_token, 
+    refresh_token, 
+    merchant_id, 
+    expires_at, 
+    created_at
+  ) VALUES (
+    $1, 
+    $2,    
+    NULL, 
+    NULL, 
+    NULL, 
+    NULL, 
+    NOW()
+  ) ON CONFLICT (state, device_id) DO NOTHING`,
+  [state, deviceId]
+)
       logger.info("Stored pending token state with device", { state, deviceId })
     } catch (dbError) {
       logger.error("Database error storing state", { error: dbError })
