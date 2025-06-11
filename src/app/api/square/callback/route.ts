@@ -3,15 +3,33 @@ import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 
+// Add this helper function after imports
+function normalizeOrganizationId(orgId: string): string {
+  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
+  // Extract just the base part "default"
+  if (orgId && orgId.includes('_') && orgId.length > 20) {
+    const parts = orgId.split('_');
+    return parts[0]; // Return "default" from "default_DEVICEID"
+  }
+  return orgId;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get("code")
     const state = searchParams.get("state")
     const deviceId = searchParams.get("device_id") // NEW: Get device_id if passed
-    let organizationId = searchParams.get("organization_id") || "default"
+    let rawOrganizationId = searchParams.get("organization_id") || "default"
+let organizationId = normalizeOrganizationId(rawOrganizationId)
 
-    logger.info("Received OAuth callback", { state, hasCode: !!code, hasOrgId: !!organizationId, deviceId })
+    logger.info("Received OAuth callback", { 
+  rawOrganizationId,
+  normalizedOrganizationId: organizationId,
+  state, 
+  hasCode: !!code, 
+  deviceId 
+})
 
     if (!code) {
       logger.error("Authorization code is missing")
@@ -28,8 +46,10 @@ export async function GET(request: NextRequest) {
 
     // Validate that the state exists in our database
     try {
-      const stateResult = await db.query("SELECT state FROM square_pending_tokens WHERE state = $1", [state])
-
+const stateResult = await db.query(
+  "SELECT state FROM square_pending_tokens WHERE state = $1 AND (device_id = $2 OR device_id IS NULL)", 
+  [state, deviceId]
+)
       if (stateResult.rows.length === 0) {
         logger.error("Invalid state parameter received", { state })
         return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_state`)

@@ -3,10 +3,22 @@ import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 
+// Add this helper function after imports
+function normalizeOrganizationId(orgId: string): string {
+  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
+  // Extract just the base part "default"
+  if (orgId && orgId.includes('_') && orgId.length > 20) {
+    const parts = orgId.split('_');
+    return parts[0]; // Return "default" from "default_DEVICEID"
+  }
+  return orgId;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { organization_id, device_id } = body // NEW: Extract device_id
+    const normalizedOrgId = organization_id ? normalizeOrganizationId(organization_id) : null
 
     if (!organization_id) {
       logger.error("Organization ID is required for disconnect")
@@ -33,8 +45,8 @@ export async function POST(request: NextRequest) {
       client = await db.connect()
       
       const result = await client.query("SELECT access_token FROM square_connections WHERE organization_id = $1", [
-        organization_id,
-      ])
+  normalizedOrgId,
+])
 
       if (result.rows.length === 0) {
         logger.warn("No Square connection found for this organization", { organization_id })
@@ -75,8 +87,7 @@ export async function POST(request: NextRequest) {
         await client.query("BEGIN")
         
         // Delete from square_connections
-        await client.query("DELETE FROM square_connections WHERE organization_id = $1", [organization_id])
-        
+await client.query("DELETE FROM square_connections WHERE organization_id = $1", [normalizedOrgId])        
         // ALSO: Clean up any pending tokens for this device
     if (device_id) {
       await client.query(
@@ -84,7 +95,7 @@ export async function POST(request: NextRequest) {
         [device_id]
       )
     }
-    
+
         // Also clean up any pending tokens for this organization
         await client.query("DELETE FROM square_pending_tokens WHERE state LIKE $1", [`%${organization_id}%`])
         

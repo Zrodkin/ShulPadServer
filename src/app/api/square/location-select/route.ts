@@ -4,6 +4,17 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 
+// Add this helper function after imports
+function normalizeOrganizationId(orgId: string): string {
+  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
+  // Extract just the base part "default"
+  if (orgId && orgId.includes('_') && orgId.length > 20) {
+    const parts = orgId.split('_');
+    return parts[0]; // Return "default" from "default_DEVICEID"
+  }
+  return orgId;
+}
+
 interface SquareLocation {
   id: string;
   name: string;
@@ -14,6 +25,8 @@ interface SquareLocation {
     administrative_district_level_1?: string;
   };
 }
+
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -74,6 +87,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { state, location_id, organization_id = "default" } = body
+    const normalizedOrgId = normalizeOrganizationId(organization_id)
 
     logger.info("Processing location selection", { state, location_id, organization_id })
 
@@ -113,11 +127,12 @@ export async function POST(request: NextRequest) {
     }
 
     logger.info("Valid location selected", { 
-      location_id, 
-      location_name: selectedLocation.name,
-      merchant_id,
-      organization_id 
-    })
+  location_id, 
+  location_name: selectedLocation.name,
+  merchant_id,
+  rawOrganizationId: organization_id,
+  normalizedOrganizationId: normalizedOrgId
+})
 
     // Begin transaction
     await db.query("BEGIN")
@@ -134,8 +149,7 @@ export async function POST(request: NextRequest) {
     expires_at, 
     created_at
   ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-  [organization_id, merchant_id, location_id, access_token, refresh_token, expires_at]
-)
+[normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at])
 
       // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
       // This allows iOS polling to find the final state
@@ -153,12 +167,13 @@ export async function POST(request: NextRequest) {
 
       await db.query("COMMIT")
 
-      logger.info("Location selection completed successfully", { 
-        organization_id, 
-        merchant_id, 
-        location_id,
-        location_name: selectedLocation.name 
-      })
+     logger.info("Location selection completed successfully", { 
+  rawOrganizationId: organization_id,
+  normalizedOrganizationId: normalizedOrgId,
+  merchant_id, 
+  location_id,
+  location_name: selectedLocation.name 
+})
 
       // Return success with location info for mobile app
       return NextResponse.json({ 

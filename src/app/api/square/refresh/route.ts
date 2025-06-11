@@ -3,12 +3,28 @@ import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 
+// Add this helper function after imports
+function normalizeOrganizationId(orgId: string): string {
+  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
+  // Extract just the base part "default"
+  if (orgId && orgId.includes('_') && orgId.length > 20) {
+    const parts = orgId.split('_');
+    return parts[0]; // Return "default" from "default_DEVICEID"
+  }
+  return orgId;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { organization_id, refresh_token, device_id } = body // NEW: Extract device_id
+    const normalizedOrgId = organization_id ? normalizeOrganizationId(organization_id) : null
 
-    logger.info("Token refresh requested", { organization_id, device_id })
+    logger.info("Token refresh requested", { 
+  rawOrganizationId: organization_id, 
+  normalizedOrganizationId: normalizedOrgId, 
+  device_id 
+})
 
     // If refresh_token is provided, use it directly
     // Otherwise, look it up in the database using organization_id
@@ -18,8 +34,8 @@ export async function POST(request: NextRequest) {
       try {
         const db = createClient()
         const result = await db.query("SELECT refresh_token FROM square_connections WHERE organization_id = $1", [
-          organization_id,
-        ])
+  normalizedOrgId,
+])
 
         if (result.rows.length > 0) {
           tokenToUse = result.rows[0].refresh_token
@@ -93,7 +109,7 @@ export async function POST(request: NextRequest) {
                expires_at = $3, 
                updated_at = NOW() 
            WHERE organization_id = $4`,
-            [data.access_token, data.refresh_token, data.expires_at, organization_id],
+[data.access_token, data.refresh_token, data.expires_at, normalizedOrgId],
           )
 
           await db.query("COMMIT")

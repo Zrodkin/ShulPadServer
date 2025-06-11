@@ -3,14 +3,31 @@ import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 
+// Add this helper function after imports
+function normalizeOrganizationId(orgId: string): string {
+  // Handle device-specific IDs like "default_FC6DCB02-74E8-4E69-AFCA-A614F66D23A9"
+  // Extract just the base part "default"
+  if (orgId && orgId.includes('_') && orgId.length > 20) {
+    const parts = orgId.split('_');
+    return parts[0]; // Return "default" from "default_DEVICEID"
+  }
+  return orgId;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const organizationId = searchParams.get("organization_id")
+    const rawOrganizationId = searchParams.get("organization_id")
+const organizationId = rawOrganizationId ? normalizeOrganizationId(rawOrganizationId) : null
     const state = searchParams.get("state")
     const deviceId = searchParams.get("device_id") // NEW: Add device_id
 
-    logger.info("Status check requested", { organizationId, state, deviceId })
+    logger.info("Status check requested", { 
+  rawOrganizationId, 
+  normalizedOrganizationId: organizationId, 
+  state, 
+  deviceId 
+})
 
     const db = createClient()
 
@@ -87,8 +104,10 @@ export async function GET(request: NextRequest) {
 
     // Path 2: Checking by organization ID (normal status check)
     else if (organizationId) {
-      logger.debug("Checking authorization status by organization ID", { organizationId })
-
+logger.debug("Checking authorization status by organization ID", { 
+  rawOrganizationId, 
+  normalizedOrganizationId: organizationId 
+})
       const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
       const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
