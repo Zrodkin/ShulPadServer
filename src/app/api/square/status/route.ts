@@ -1,179 +1,193 @@
-import { type NextRequest, NextResponse } from "next/server"
-import axios from "axios"
+// src/app/api/square/status/route.ts - FIXED VERSION
+import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
-import { normalizeOrganizationId } from "@/lib/organizationUtils" 
+import { normalizeOrganizationId } from "@/lib/organizationUtils"
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const rawOrganizationId = searchParams.get("organization_id")
-    let organizationId = rawOrganizationId
-    const state = searchParams.get("state")
-    const deviceId = searchParams.get("device_id") // NEW: Add device_id
+    const { searchParams } = new URL(request.url)
+    const organizationId = searchParams.get('organization_id')
+    const state = searchParams.get('state')
+    const deviceId = searchParams.get('device_id')
 
-    logger.info("Status check requested", { 
-      rawOrganizationId, 
-      normalizedOrganizationId: organizationId, 
-      state, 
-      deviceId 
+    logger.info("Status check requested", {
+      rawOrganizationId: organizationId,
+      normalizedOrganizationId: organizationId,
+      state,
+      deviceId
     })
 
     const db = createClient()
 
-    // Path 1: Checking by state parameter (for OAuth flow tracking)
+    // SCENARIO 1: State-based check (during OAuth flow)
     if (state) {
-      logger.debug("Checking authorization status by state", { state, deviceId })
-
-      // UPDATE: Include device_id in pending tokens query
+      logger.info("Checking state-based auth status", { state })
+      
+      // First check pending tokens table
       const pendingResult = await db.query(
-        "SELECT access_token, refresh_token, merchant_id, location_id, location_data, expires_at FROM square_pending_tokens WHERE state = $1 AND (device_id = $2 OR device_id IS NULL)",
-        [state, deviceId]
+        `SELECT * FROM square_pending_tokens WHERE state = $1`,
+        [state]
       )
 
       if (pendingResult.rows.length > 0) {
-        const row = pendingResult.rows[0]
-
-        // Check if we have tokens AND a specific location_id (final state)
-        if (row.access_token && row.location_id) {
-          // ✅ FINAL STATE: We have tokens and user has selected a location
-          const { access_token, refresh_token, merchant_id, location_id, expires_at } = row
-
-          // Mark as obtained instead of deleting immediately
-          await db.query("UPDATE square_pending_tokens SET obtained = true WHERE state = $1", [state]);
-          logger.info("Found completed authorization with location", { state, merchantId: merchant_id, locationId: location_id });
-    
-          // Return the tokens - this is what iOS needs
+        const pendingToken = pendingResult.rows[0]
+        
+        // If we have all required data, auth is complete
+        if (pendingToken.access_token && 
+            pendingToken.refresh_token && 
+            pendingToken.merchant_id && 
+            pendingToken.location_id && 
+            pendingToken.obtained) {
+          
+          logger.info("State-based auth completed successfully", { 
+            state, 
+            merchant_id: pendingToken.merchant_id,
+            location_id: pendingToken.location_id 
+          })
+          
           return NextResponse.json({
             connected: true,
-            access_token,
-            refresh_token,
-            merchant_id,
-            location_id,
-            expires_at,
+            access_token: pendingToken.access_token,
+            refresh_token: pendingToken.refresh_token,
+            merchant_id: pendingToken.merchant_id,
+            location_id: pendingToken.location_id,
+            expires_at: pendingToken.expires_at
           })
-        } 
-        // Check if we have tokens but multiple locations (needs user selection)
-        else if (row.access_token && row.location_data) {
-          // ✅ INTERMEDIATE STATE: We have tokens but user needs to select location
-          logger.debug("Found pending authorization with multiple locations", { state })
-          
-          let locations = []
-          try {
-            locations = JSON.parse(row.location_data)
-          } catch (e) {
-            logger.error("Failed to parse location_data", { error: e, state })
-          }
-          
-          return NextResponse.json({
-            connected: false,
+        }
+        
+        // Check if location selection is needed
+        if (pendingToken.access_token && pendingToken.merchant_id && !pendingToken.location_id) {
+          logger.info("Location selection required", { state })
+          return NextResponse.json({ 
+            connected: false, 
             message: "location_selection_required",
-            merchant_id: row.merchant_id,
-            locations: locations,
-            // Include enough info for location selection
-            selection_url: `/api/square/location-select?state=${state}`,
+            merchant_id: pendingToken.merchant_id 
           })
         }
-        // We have the state but no tokens yet (still in OAuth flow)
-        else {
-          logger.debug("Found pending state but no tokens yet", { state })
-          return NextResponse.json({
-            connected: false,
-            message: "authorization_in_progress",
-          })
-        }
-      } else {
-        // No pending authorization found
-        logger.debug("No pending authorization found for state", { state })
-        return NextResponse.json({
-          connected: false,
-          message: "invalid_state",
+        
+        // Otherwise, still in progress
+        logger.info("Authorization still in progress", { state })
+        return NextResponse.json({ 
+          connected: false, 
+          message: "authorization_in_progress" 
         })
       }
-    }
 
-    // Path 2: Checking by organization ID (normal status check)
-    else if (organizationId) {
-      logger.debug("Checking authorization status by organization ID", { 
-        rawOrganizationId, 
-        normalizedOrganizationId: organizationId 
-      })
+      // 🔧 CRITICAL FIX: If state not found in pending, check if tokens were finalized
+      // This happens when location-select completes and moves tokens to square_connections
+      logger.info("State not found in pending tokens, checking finalized connections", { state })
       
-      const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
-      const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
-
-      // Get the access token from the database
-      let result = await db.query(
-        "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id = $1",
-        [organizationId],
+      // Try to find the connection by looking for recent entries
+      // Since we don't have direct state->org mapping, we'll check recent connections
+      const recentConnectionResult = await db.query(
+        `SELECT * FROM square_connections 
+         WHERE created_at > NOW() - INTERVAL '10 minutes' 
+         ORDER BY created_at DESC 
+         LIMIT 1`
       )
 
-      if (result.rows.length === 0 && rawOrganizationId && rawOrganizationId.includes('_')) {
-        const baseOrgId = rawOrganizationId.split('_')[0]
-        result = await db.query(
-          "SELECT access_token, refresh_token, expires_at, merchant_id, location_id FROM square_connections WHERE organization_id LIKE $1",
-          [`${baseOrgId}_%`],
-        )
-      }
-
-      // ✅ FIX: Check if we have any results before destructuring
-      if (result.rows.length === 0) {
-        logger.info("No Square connection found for organization", { organizationId })
-        return NextResponse.json({
-          connected: false,
-          message: "No Square connection found for this organization"
+      if (recentConnectionResult.rows.length > 0) {
+        const connection = recentConnectionResult.rows[0]
+        
+        logger.info("Found recent connection that matches timeframe", { 
+          organization_id: connection.organization_id,
+          merchant_id: connection.merchant_id,
+          location_id: connection.location_id 
         })
-      }
-
-      // ✅ FIX: Now safe to destructure since we know result.rows[0] exists
-      const { access_token, refresh_token, expires_at, merchant_id, location_id } = result.rows[0]
-
-      // Check if token is expired
-      const expirationDate = new Date(expires_at)
-      if (expirationDate < new Date()) {
-        logger.warn("Token expired", { organizationId, expires_at })
-        return NextResponse.json({
-          connected: false,
-          message: "Token expired",
-          needs_refresh: true,
-        })
-      }
-
-      // Verify token by making a simple API call
-      try {
-        logger.debug("Verifying token with Square API", { organizationId })
-        await axios.get(`https://connect.${SQUARE_DOMAIN}/v2/locations`, {
-          headers: {
-            Authorization: `Bearer ${access_token}`,
-            "Content-Type": "application/json",
-            "Square-Version": "2023-09-25",
-          },
-        })
-
-        logger.info("Token verification successful", { organizationId })
+        
         return NextResponse.json({
           connected: true,
-          merchant_id,
-          location_id,
-          expires_at: expires_at,
-          // ✅ IMPORTANT: Include access_token for iOS app
-          access_token,
-          refresh_token,
-        })
-      } catch (apiError) {
-        logger.error("API error checking token", { error: apiError, organizationId })
-        return NextResponse.json({
-          connected: false,
-          message: "Token validation failed",
-          needs_refresh: true,
+          access_token: connection.access_token,
+          refresh_token: connection.refresh_token,
+          merchant_id: connection.merchant_id,
+          location_id: connection.location_id,
+          expires_at: connection.expires_at
         })
       }
-    } else {
-      logger.warn("Missing required parameters")
-      return NextResponse.json({ error: "Either organization_id or state parameter is required" }, { status: 400 })
+
+      // If we still can't find it, it's truly not ready yet
+      logger.info("State not found anywhere, still waiting", { state })
+      return NextResponse.json({ 
+        connected: false, 
+        message: "token_not_found" 
+      })
     }
-  } catch (error) {
-    logger.error("Server error", { error })
-    return NextResponse.json({ error: "Server error checking connection status" }, { status: 500 })
+
+    // SCENARIO 2: Organization-based check (normal operation)
+    if (organizationId) {
+      const normalizedOrgId = normalizeOrganizationId(organizationId)
+      
+      logger.info("Checking organization-based auth status", { 
+        original: organizationId, 
+        normalized: normalizedOrgId 
+      })
+
+      const result = await db.query(
+        `SELECT * FROM square_connections WHERE organization_id = $1`,
+        [normalizedOrgId]
+      )
+
+      if (result.rows.length === 0) {
+        logger.info("No connection found for organization", { 
+          organizationId: normalizedOrgId 
+        })
+        return NextResponse.json({ connected: false })
+      }
+
+      const connection = result.rows[0]
+      const now = new Date()
+      const expiresAt = new Date(connection.expires_at)
+
+      // Check if token is expired
+      if (expiresAt <= now) {
+        logger.info("Token expired for organization", { 
+          organizationId: normalizedOrgId,
+          expiresAt: connection.expires_at 
+        })
+        return NextResponse.json({ 
+          connected: false, 
+          needs_refresh: true,
+          expires_at: connection.expires_at 
+        })
+      }
+
+      // Check if token needs refresh (expires in less than 7 days)
+      const sevenDaysFromNow = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000))
+      const needsRefresh = expiresAt <= sevenDaysFromNow
+
+      logger.info("Organization connection found", { 
+        organizationId: normalizedOrgId,
+        merchantId: connection.merchant_id,
+        locationId: connection.location_id,
+        needsRefresh 
+      })
+
+      return NextResponse.json({
+        connected: true,
+        access_token: connection.access_token,
+        refresh_token: connection.refresh_token,
+        merchant_id: connection.merchant_id,
+        location_id: connection.location_id,
+        expires_at: connection.expires_at,
+        needs_refresh: needsRefresh
+      })
+    }
+
+    // SCENARIO 3: Invalid request - neither state nor organization_id provided
+    logger.warn("Status check missing required parameters", { 
+      hasState: !!state, 
+      hasOrgId: !!organizationId 
+    })
+    
+    return NextResponse.json({ 
+      error: "Missing required parameters: state or organization_id" 
+    }, { status: 400 })
+
+  } catch (error: any) {
+    logger.error("Error in status check", { error: error.message, stack: error.stack })
+    return NextResponse.json({ 
+      error: "Internal server error" 
+    }, { status: 500 })
   }
 }
