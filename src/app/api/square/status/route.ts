@@ -34,11 +34,10 @@ export async function GET(request: NextRequest) {
         const pendingToken = pendingResult.rows[0]
         
         // If we have all required data, auth is complete
-        if (pendingToken.access_token && 
-            pendingToken.refresh_token && 
-            pendingToken.merchant_id && 
-            pendingToken.location_id && 
-            pendingToken.obtained) {
+   if (pendingToken.access_token && 
+    pendingToken.refresh_token && 
+    pendingToken.merchant_id && 
+    pendingToken.location_id) { 
           
           logger.info("State-based auth completed successfully", { 
             state, 
