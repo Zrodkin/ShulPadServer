@@ -4,7 +4,10 @@ import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import { normalizeOrganizationId } from "@/lib/organizationUtils"
 
-
+// Add MySQL datetime conversion function
+function convertToMySQLDatetime(isoString: string): string {
+  return new Date(isoString).toISOString().slice(0, 19).replace('T', ' ');
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -165,7 +168,7 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
   try {
     await db.execute("START TRANSACTION")
 
-    // Update pending tokens with location info
+    // Update pending tokens with location info - FIXED: Convert expires_at to MySQL datetime
     await db.execute(
       `UPDATE square_pending_tokens SET
         access_token = ?, 
@@ -174,10 +177,10 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
         location_id = ?,
         expires_at = ?
       WHERE state = ?`,
-      [access_token, refresh_token, merchant_id, singleLocation.id, expires_at, state]
+      [access_token, refresh_token, merchant_id, singleLocation.id, convertToMySQLDatetime(expires_at), state]
     )
 
-    // Store in permanent table
+    // Store in permanent table - FIXED: Convert expires_at to MySQL datetime
     const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id);
     
     await db.execute(
@@ -197,7 +200,7 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
         refresh_token = VALUES(refresh_token),
         expires_at = VALUES(expires_at),
         updated_at = NOW()`,
-      [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
+      [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, convertToMySQLDatetime(expires_at)]
     )
 
     await db.execute("COMMIT")
@@ -220,7 +223,7 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
           locations_count: activeLocations.length 
         })
 
-        // Store ALL locations in pending tokens for selection
+        // Store ALL locations in pending tokens for selection - FIXED: Convert expires_at to MySQL datetime
         try {
          await db.execute(
   `UPDATE square_pending_tokens SET
@@ -235,7 +238,7 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
     refresh_token,    // 2nd parameter  
     merchant_id,      // 3rd parameter
     JSON.stringify(activeLocations), // 4th parameter
-    expires_at,       // 5th parameter
+    convertToMySQLDatetime(expires_at), // 5th parameter - FIXED: Convert to MySQL datetime
     state            // 6th parameter (WHERE clause)
   ]
 )
