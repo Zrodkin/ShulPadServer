@@ -39,7 +39,7 @@ export async function GET(request: Request) {
       const db = createClient()
       
       // ✅ FIX: Simplified insert without complex conflict handling
-      await db.query(
+      await db.execute(
         `INSERT INTO square_pending_tokens (
           state, 
           device_id,
@@ -49,8 +49,8 @@ export async function GET(request: Request) {
           expires_at, 
           created_at
         ) VALUES (
-          $1, 
-          $2,    
+          ?, 
+          ?,    
           NULL, 
           NULL, 
           NULL, 

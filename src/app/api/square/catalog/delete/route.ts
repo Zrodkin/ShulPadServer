@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
 
     // Get the access token from the database
     const db = createClient()
-    const result = await db.query(
-      "SELECT access_token FROM square_connections WHERE organization_id = $1",
+    const result = await db.execute(
+      "SELECT access_token FROM square_connections WHERE organization_id = ?",
       [organization_id]
     )
 

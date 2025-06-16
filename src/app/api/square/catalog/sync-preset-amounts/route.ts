@@ -86,10 +86,10 @@ async function syncPresetAmountsForAllOrganizations(forceSynchronization: boolea
                s.access_token, s.location_id
         FROM kiosk_settings k
         JOIN organizations o ON k.organization_id = o.id
-        JOIN square_connections s ON o.id::text = s.organization_id
+        JOIN square_connections s ON o.id = s.organization_id
         WHERE s.access_token IS NOT NULL
         AND (
-          (k.preset_amounts IS NOT NULL AND array_length(k.preset_amounts, 1) > 0)
+          (k.preset_amounts IS NOT NULL AND JSON_LENGTH(k.preset_amounts) > 0)
           OR k.catalog_parent_id IS NOT NULL
         )
       `
@@ -99,13 +99,13 @@ async function syncPresetAmountsForAllOrganizations(forceSynchronization: boolea
                s.access_token, s.location_id
         FROM kiosk_settings k
         JOIN organizations o ON k.organization_id = o.id
-        JOIN square_connections s ON o.id::text = s.organization_id
+        JOIN square_connections s ON o.id = s.organization_id
         WHERE k.preset_amounts IS NOT NULL 
-        AND array_length(k.preset_amounts, 1) > 0
+        AND JSON_LENGTH(k.preset_amounts) > 0
         AND s.access_token IS NOT NULL
       `;
 
-    const result = await db.query(query);
+    const result = await db.execute(query);
     logger.info(`Found ${result.rows.length} organizations to sync`);
 
     // Process each organization
@@ -170,12 +170,12 @@ async function syncPresetAmountsForOrganization(organizationId: string, forceSyn
              s.access_token, s.location_id
       FROM kiosk_settings k
       JOIN organizations o ON k.organization_id = o.id
-      JOIN square_connections s ON o.id::text = s.organization_id
-      WHERE o.id::text = $1
+      JOIN square_connections s ON o.id = s.organization_id  
+WHERE o.id = ?
       AND s.access_token IS NOT NULL
     `;
 
-    const result = await db.query(query, [organizationId]);
+    const result = await db.execute(query, [organizationId]);
     
     if (result.rows.length === 0) {
       logger.warn(`Organization ${organizationId} not found or not connected to Square`);
@@ -193,7 +193,7 @@ async function syncPresetAmountsForOrganization(organizationId: string, forceSyn
     
     // Skip if no preset amounts and not forcing sync
     if (!forceSynchronization && 
-        (!row.preset_amounts || row.preset_amounts.length === 0)) {
+        (!row.preset_amounts || JSON.stringify(row.preset_amounts) === '[]')) {
       logger.info(`Organization ${organizationId} has no preset amounts to sync`);
       results.details.push({
         organization_id: organizationId,
@@ -266,7 +266,7 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
   const client = await db.connect();
 
   try {
-    await client.query("BEGIN");
+   
 
     let donationItemId = currentCatalogId;
     
@@ -278,8 +278,8 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
         donationItemId = null;
         
         // Clear stale parent ID from database
-        await client.query(
-          "UPDATE kiosk_settings SET catalog_parent_id = NULL WHERE id = $1",
+        await client.execute(
+          "UPDATE kiosk_settings SET catalog_parent_id = NULL WHERE id = ?",
           [kioskId]
         );
       }
@@ -290,7 +290,7 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
       donationItemId = await createDonationsItemInSquare(accessToken, locationId);
       
       if (!donationItemId) {
-        await client.query("ROLLBACK");
+       
         return { 
           success: false, 
           reason: "Failed to create new Donations catalog item in Square" 
@@ -308,7 +308,7 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
     );
 
     if (!catalogVariations || catalogVariations.length === 0) {
-      await client.query("ROLLBACK");
+      
       return { 
         success: false, 
         reason: "Failed to create catalog variations in Square" 
@@ -316,8 +316,8 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
     }
 
     // STEP 4: Clear existing preset_donations for this organization
-    await client.query(
-      "DELETE FROM preset_donations WHERE organization_id = $1",
+    await client.execute(
+      "DELETE FROM preset_donations WHERE organization_id = ?",
       [organizationId]
     );
 
@@ -329,26 +329,26 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
       );
 
       if (variation) {
-        await client.query(
+        await client.execute(
           `INSERT INTO preset_donations 
            (organization_id, amount, catalog_item_id, catalog_variation_id, display_order) 
-           VALUES ($1, $2, $3, $4, $5)`,
+           VALUES (?, ?, ?, ?, ?)`,
           [organizationId, amount, donationItemId, variation.id, i + 1]
         );
       }
     }
 
     // STEP 6: Update kiosk_settings with the catalog_parent_id
-    await client.query(
+    await client.execute(
       `UPDATE kiosk_settings 
-       SET catalog_parent_id = $1, 
+       SET catalog_parent_id = ?, 
            last_catalog_sync = NOW(),
            preset_amounts = NULL
-       WHERE id = $2`,
+       WHERE id = ?`,
       [donationItemId, kioskId]
     );
 
-    await client.query("COMMIT");
+ 
     
     return { 
       success: true, 
@@ -359,7 +359,7 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
       }
     };
   } catch (error) {
-    await client.query("ROLLBACK");
+ 
     logger.error(`Error syncing preset amounts for organization ${organizationId}`, { error });
     return { 
       success: false, 

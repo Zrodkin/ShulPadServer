@@ -20,14 +20,14 @@ export async function POST(request: NextRequest) {
     const client = await db.connect()
     
     try {
-      await client.query("BEGIN")
+      await client.execute("BEGIN")
       
       if (disconnect_all_devices) {
         // FULL DISCONNECT - like the original behavior
         // Get the access token and revoke it
 const normalizedOrgId = normalizeOrganizationId(organization_id)
-        const result = await client.query(
-          "SELECT access_token, merchant_id FROM square_connections WHERE organization_id = $1", 
+        const result = await client.execute(
+          "SELECT access_token, merchant_id FROM square_connections WHERE organization_id = ?", 
           [normalizedOrgId]
         )
 
@@ -57,19 +57,19 @@ const normalizedOrgId = normalizeOrganizationId(organization_id)
           }
           
           // Delete connection from database
-          await client.query("DELETE FROM square_connections WHERE organization_id = $1", [properNormalizedOrgId])
+          await client.execute("DELETE FROM square_connections WHERE organization_id = ?", [properNormalizedOrgId])
         }
       }
       
       // Always clean up device-specific pending tokens
       if (device_id) {
-        await client.query("DELETE FROM square_pending_tokens WHERE device_id = $1", [device_id])
+        await client.execute("DELETE FROM square_pending_tokens WHERE device_id = ?", [device_id])
       }
       
       // Clean up pending tokens for this organization
-      await client.query("DELETE FROM square_pending_tokens WHERE state LIKE $1", [`%${organization_id}%`])
+      await client.execute("DELETE FROM square_pending_tokens WHERE state LIKE ?", [`%${organization_id}%`])
       
-      await client.query("COMMIT")
+      await client.execute("COMMIT")
       
       const message = disconnect_all_devices 
         ? "All devices disconnected from Square account"
@@ -78,7 +78,7 @@ const normalizedOrgId = normalizeOrganizationId(organization_id)
       logger.info("Disconnection successful", { organization_id, disconnect_all_devices })
       
     } catch (dbError) {
-      await client.query("ROLLBACK")
+      await client.execute("ROLLBACK")
       logger.error("Database error during disconnect", { error: dbError })
       return NextResponse.json({ error: "Database error during disconnection" }, { status: 500 })
     } finally {

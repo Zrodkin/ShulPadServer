@@ -25,13 +25,13 @@ export async function POST(request: NextRequest) {
         const db = createClient()
         
         // First try exact match
-        let result = await db.query("SELECT refresh_token, merchant_id FROM square_connections WHERE organization_id = $1", [
+        let result = await db.execute("SELECT refresh_token, merchant_id FROM square_connections WHERE organization_id = ?", [
           organization_id,
         ])
 
         if (result.rows.length === 0 && organization_id.includes('_')) {
           const baseOrgId = organization_id.split('_')[0]
-          result = await db.query("SELECT refresh_token, merchant_id FROM square_connections WHERE organization_id LIKE $1", [
+          result = await db.execute("SELECT refresh_token, merchant_id FROM square_connections WHERE organization_id LIKE ?", [
             `${baseOrgId}_%`,
           ])
         }
@@ -101,12 +101,12 @@ export async function POST(request: NextRequest) {
         const db = createClient()
 
         // Use transaction for data consistency
-        await db.query("BEGIN")
+        await db.execute("BEGIN")
 
         try {
-          await db.query(
+          await db.execute(
             `UPDATE square_connections 
-             SET access_token = $1, 
+             SET access_token = ?, 
                  refresh_token = $2, 
                  expires_at = $3, 
                  updated_at = NOW() 
@@ -114,10 +114,10 @@ export async function POST(request: NextRequest) {
             [data.access_token, data.refresh_token, data.expires_at, normalizedOrgId],
           )
 
-          await db.query("COMMIT")
+          await db.execute("COMMIT")
           logger.debug("Updated tokens in database", { organization_id })
         } catch (error) {
-          await db.query("ROLLBACK")
+          await db.execute("ROLLBACK")
           throw error
         }
       } catch (dbError: unknown) {

@@ -29,10 +29,10 @@ export async function GET(request: Request) {
     // Get all connections that need to be refreshed
     // (tokens that expire in less than 7 days)
     const db = createClient()
-    const result = await db.query(
+    const result = await db.execute(
       `SELECT organization_id, refresh_token 
        FROM square_connections 
-       WHERE expires_at < NOW() + INTERVAL '7 days'`,
+       WHERE expires_at < NOW() + INTERVAL 7 DAY`,
     )
 
     logger.info(`Found ${result.rows.length} tokens to refresh`)
@@ -79,10 +79,10 @@ export async function GET(request: Request) {
         }
 
         // Update the tokens in the database using a transaction
-        await db.query("BEGIN")
+        await db.execute("BEGIN")
 
         try {
-          await db.query(
+          await db.execute(
   `UPDATE square_connections 
    SET access_token = $1, 
        refresh_token = $2, 
@@ -92,10 +92,10 @@ export async function GET(request: Request) {
   [data.access_token, data.refresh_token, data.expires_at, organization_id],
 )
 
-          await db.query("COMMIT")
+          await db.execute("COMMIT")
           logger.info(`Successfully refreshed token for ${organization_id}`)
         } catch (error) {
-          await db.query("ROLLBACK")
+          await db.execute("ROLLBACK")
           throw error
         }
 

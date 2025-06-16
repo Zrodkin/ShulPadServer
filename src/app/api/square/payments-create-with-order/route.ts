@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
 
     // Get the access token and location_id from the database
     const db = createClient()
-    const result = await db.query(
-      "SELECT access_token, location_id FROM square_connections WHERE organization_id = $1",
+    const result = await db.execute(
+      "SELECT access_token, location_id FROM square_connections WHERE organization_id = ?",
       [organization_id]
     )
 
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
 
     // Store payment record for tracking (optional - for your internal records)
     try {
-      await db.query(
+      await db.execute(
         `INSERT INTO payment_records (
           organization_id, 
           square_payment_id,
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
           status,
           payment_data,
           created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+        ) VALUES (?, $2, $3, $4, $5, $6, $7, NOW())`,
         [
           organization_id,
           payment.id,

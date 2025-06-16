@@ -340,7 +340,7 @@ async function createReceiptLogEntry(db: any, data: {
   order_id?: string;
 }): Promise<number> {
   try {
-    const result = await db.query(
+    const result = await db.execute(
       `INSERT INTO receipt_log (
         organization_id, 
         donor_email, 
@@ -349,32 +349,31 @@ async function createReceiptLogEntry(db: any, data: {
         order_id,
         delivery_status,
         requested_at
-      ) VALUES ($1, $2, $3, $4, $5, 'pending', NOW())
-      RETURNING id`,
+      ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())`,
       [
         data.organization_id, 
         data.donor_email, 
         data.amount, 
-        data.transaction_id || null, // Ensure null if undefined
-        data.order_id || null       // Ensure null if undefined
+        data.transaction_id || null,
+        data.order_id || null
       ]
     )
-    return result.rows[0].id
+    return result.insertId  // PlanetScale automatically provides the inserted ID
   } catch (error) {
     logger.error("Database error creating receipt log entry", { error, data })
-    throw error // Rethrow to be caught by main handler
+    throw error
   }
 }
 
 async function updateReceiptLogSuccess(db: any, receiptLogId: number, messageId: string): Promise<void> {
   try {
-    await db.query(
+    await db.execute(
       `UPDATE receipt_log 
-       SET delivery_status = 'sent', 
-           sent_at = NOW(), 
-           sendgrid_message_id = $1,
-           updated_at = NOW()
-       WHERE id = $2`,
+SET delivery_status = 'sent', 
+    sent_at = NOW(), 
+    sendgrid_message_id = ?,
+    updated_at = NOW()
+WHERE id = ?`,
       [messageId, receiptLogId]
     )
   } catch (error) {
@@ -389,14 +388,14 @@ async function updateReceiptLogFailure(db: any, receiptLogId: number, errorMsg: 
     const MAX_ERROR_LENGTH = 255; // Example, adjust to your DB schema
     const truncatedError = errorMsg.length > MAX_ERROR_LENGTH ? errorMsg.substring(0, MAX_ERROR_LENGTH) : errorMsg;
 
-    await db.query(
+    await db.execute(
       `UPDATE receipt_log 
-       SET delivery_status = 'failed', 
-           delivery_error = $1,
-           retry_count = retry_count + 1,
-           last_retry_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $2`,
+SET delivery_status = 'failed', 
+    delivery_error = ?,
+    retry_count = retry_count + 1,
+    last_retry_at = NOW(),
+    updated_at = NOW()
+WHERE id = ?`,
       [truncatedError, receiptLogId]
     )
   } catch (dbError) {

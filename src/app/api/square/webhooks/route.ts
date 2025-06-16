@@ -133,14 +133,14 @@ export async function POST(request: NextRequest) {
 
     // Log the webhook event for auditing
     try {
-      await db.query(
+      await db.execute(
         `INSERT INTO webhook_events (
-          event_id, event_type, merchant_id, location_id, 
-          created_at, processed_at, payload
-        ) VALUES ($1, $2, $3, $4, $5, NOW(), $6)
-        ON CONFLICT (event_id) DO UPDATE SET 
-          processed_at = NOW(), 
-          payload = $6`,
+  event_id, event_type, merchant_id, location_id, 
+  created_at, processed_at, payload
+) VALUES (?, ?, ?, ?, ?, NOW(), ?)
+ON DUPLICATE KEY UPDATE 
+  processed_at = NOW(), 
+  payload = VALUES(payload)`,
         [
           webhookEvent.event_id,
           webhookEvent.type,
@@ -175,8 +175,8 @@ async function handleOAuthRevocation(db: any, event: WebhookEvent) {
   
   try {
     // Find and deactivate the connection
-    const result = await db.query(
-      "UPDATE square_connections SET is_active = false, revoked_at = NOW() WHERE merchant_id = $1",
+    const result = await db.execute(
+      "UPDATE square_connections SET is_active = false, revoked_at = NOW() WHERE merchant_id = ?",
       [event.merchant_id]
     )
     
@@ -205,8 +205,8 @@ async function handleCatalogUpdate(db: any, event: WebhookEvent) {
   
   try {
     // Update the last catalog sync time for relevant organizations
-    await db.query(
-      "UPDATE square_connections SET last_catalog_sync = NOW() WHERE merchant_id = $1",
+    await db.execute(
+      "UPDATE square_connections SET last_catalog_sync = NOW() WHERE merchant_id = ?",
       [event.merchant_id]
     )
     
@@ -246,13 +246,13 @@ async function handlePaymentEvent(db: any, event: WebhookEvent) {
   
   try {
     // Log payment events for donation tracking
-    await db.query(
+    await db.execute(
       `INSERT INTO payment_events (
-        payment_id, event_type, merchant_id, location_id,
-        event_data, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (payment_id, event_type) DO UPDATE SET
-        event_data = $5, updated_at = NOW()`,
+  payment_id, event_type, merchant_id, location_id,
+  event_data, created_at
+) VALUES (?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  event_data = VALUES(event_data), updated_at = NOW()`,
       [
         paymentId,
         event.type,
@@ -286,13 +286,13 @@ async function handleOrderEvent(db: any, event: WebhookEvent) {
   
   try {
     // Log order events for donation tracking
-    await db.query(
+    await db.execute(
       `INSERT INTO order_events (
-        order_id, event_type, merchant_id, location_id,
-        event_data, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (order_id, event_type) DO UPDATE SET
-        event_data = $5, updated_at = NOW()`,
+  order_id, event_type, merchant_id, location_id,
+  event_data, created_at
+) VALUES (?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  event_data = VALUES(event_data), updated_at = NOW()`,
       [
         orderId,
         event.type,

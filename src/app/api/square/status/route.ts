@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
       logger.info("Checking state-based auth status", { state })
       
       // First check pending tokens table
-      const pendingResult = await db.query(
-        `SELECT * FROM square_pending_tokens WHERE state = $1`,
+      const pendingResult = await db.execute(
+        `SELECT * FROM square_pending_tokens WHERE state = ?`,
         [state]
       )
 
@@ -79,9 +79,9 @@ export async function GET(request: NextRequest) {
       
       // Try to find the connection by looking for recent entries
       // Since we don't have direct state->org mapping, we'll check recent connections
-      const recentConnectionResult = await db.query(
+      const recentConnectionResult = await db.execute(
         `SELECT * FROM square_connections 
-         WHERE created_at > NOW() - INTERVAL '10 minutes' 
+         WHERE created_at > NOW() - INTERVAL 10 MINUTE 
          ORDER BY created_at DESC 
          LIMIT 1`
       )
@@ -122,8 +122,8 @@ export async function GET(request: NextRequest) {
         normalized: normalizedOrgId 
       })
 
-      const result = await db.query(
-        `SELECT * FROM square_connections WHERE organization_id = $1`,
+      const result = await db.execute(
+        `SELECT * FROM square_connections WHERE organization_id = ?`,
         [normalizedOrgId]
       )
 

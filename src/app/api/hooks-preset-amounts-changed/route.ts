@@ -23,11 +23,11 @@ export async function POST(request: NextRequest) {
     const db = createClient();
     
     try {
-      await db.query(
+      await db.execute(
         `UPDATE kiosk_settings 
-         SET preset_amounts = $1,
+         SET preset_amounts = ?,
              updated_at = NOW()
-         WHERE organization_id = $2`,
+         WHERE organization_id = ?`,
         [preset_amounts, organization_id]
       );
       

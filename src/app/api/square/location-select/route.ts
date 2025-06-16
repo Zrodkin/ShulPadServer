@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
 
     // Get pending authorization data
     const db = createClient()
-    const result = await db.query(
-      "SELECT location_data, merchant_id FROM square_pending_tokens WHERE state = $1",
+    const result = await db.execute(
+      "SELECT location_data, merchant_id FROM square_pending_tokens WHERE state = ?",
       [state]
     )
 
@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
     const db = createClient()
     
     // Get the pending authorization data
-    const pendingResult = await db.query(
+    const pendingResult = await db.execute(
       `SELECT access_token, refresh_token, merchant_id, location_data, expires_at 
-       FROM square_pending_tokens WHERE state = $1`,
+       FROM square_pending_tokens WHERE state = ?`,
       [state]
     )
 
@@ -126,14 +126,14 @@ export async function POST(request: NextRequest) {
 })
 
     // Begin transaction
-    await db.query("BEGIN")
+    await db.execute("BEGIN")
 
     try {
       // Store in permanent connections table with selected location
     const normalizedOrgId = normalizeOrganizationId(organization_id, merchant_id);
       
       // Store in permanent connections table with selected location
-    await db.query(
+    await db.execute(
   `INSERT INTO square_connections (
     organization_id, 
     merchant_id,
@@ -142,8 +142,8 @@ export async function POST(request: NextRequest) {
     refresh_token, 
     expires_at, 
     created_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-  ON CONFLICT (organization_id) DO UPDATE SET
+  ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+ON DUPLICATE KEY UPDATE
     merchant_id = EXCLUDED.merchant_id,
     location_id = EXCLUDED.location_id,
     access_token = EXCLUDED.access_token,
@@ -155,19 +155,19 @@ export async function POST(request: NextRequest) {
 
       // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
       // This allows iOS polling to find the final state
-      await db.query(
+      await db.execute(
         `UPDATE square_pending_tokens SET
-          access_token = $2, 
-          refresh_token = $3, 
-          merchant_id = $4,
-          location_id = $5,
+          access_token = ?, 
+          refresh_token = ?, 
+          merchant_id = ?,
+          location_id = ?,
           location_data = NULL,
-          expires_at = $6
-        WHERE state = $1`,
+          expires_at = ?
+        WHERE state = ?`,
         [state, access_token, refresh_token, merchant_id, location_id, expires_at]
       )
 
-      await db.query("COMMIT")
+      await db.execute("COMMIT")
 
      logger.info("Location selection completed successfully", { 
   rawOrganizationId: organization_id,
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
       })
 
     } catch (dbError) {
-      await db.query("ROLLBACK")
+      await db.execute("ROLLBACK")
       logger.error("Database error during location selection", { error: dbError })
       return NextResponse.json({ error: "Database error" }, { status: 500 })
     }

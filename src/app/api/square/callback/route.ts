@@ -41,8 +41,8 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
   logger.info("🔍 Validating state parameter", { state })
   
   // ✅ FIX: Simple state validation without device_id complications
-  const stateResult = await db.query(
-    "SELECT state, device_id FROM square_pending_tokens WHERE state = $1", 
+  const stateResult = await db.execute(
+    "SELECT state, device_id FROM square_pending_tokens WHERE state = ?", 
     [state]
   )
   
@@ -165,24 +165,24 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
 
         // Store directly in permanent table since there's only one choice
         try {
-          await db.query("BEGIN")
+          await db.execute("BEGIN")
 
           // Update pending tokens with location info
-          await db.query(
+          await db.execute(
             `UPDATE square_pending_tokens SET
-              access_token = $2, 
-              refresh_token = $3, 
-              merchant_id = $4,
-              location_id = $5,
-              expires_at = $6
-            WHERE state = $1`,
+              access_token = ?, 
+              refresh_token = ?, 
+              merchant_id = ?,
+              location_id = ?,
+              expires_at = ?
+            WHERE state = ?`,
             [state, access_token, refresh_token, merchant_id, singleLocation.id, expires_at]
           )
 
           // Store in permanent table
   const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id);
         
-        await db.query(
+        await db.execute(
   `INSERT INTO square_connections (
     organization_id, 
     merchant_id,
@@ -191,8 +191,8 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
     refresh_token, 
     expires_at, 
     created_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-  ON CONFLICT (organization_id) DO UPDATE SET
+  ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+ON DUPLICATE KEY UPDATE
     merchant_id = EXCLUDED.merchant_id,
     location_id = EXCLUDED.location_id,
     access_token = EXCLUDED.access_token,
@@ -202,7 +202,7 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
   [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
 )
 
-          await db.query("COMMIT")
+          await db.execute("COMMIT")
           logger.info("Single location setup completed", { 
             organizationId, 
             merchantId: merchant_id, 
@@ -216,7 +216,7 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
           )
 
         } catch (error) {
-          await db.query("ROLLBACK")
+          await db.execute("ROLLBACK")
           logger.error("Error storing single location", { error })
           return NextResponse.redirect(
             `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
@@ -230,14 +230,14 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
 
         // Store ALL locations in pending tokens for selection
         try {
-          await db.query(
+          await db.execute(
             `UPDATE square_pending_tokens SET
-              access_token = $2, 
-              refresh_token = $3, 
-              merchant_id = $4,
-              location_data = $5,
-              expires_at = $6
-            WHERE state = $1`,
+              access_token = ?, 
+              refresh_token = ?, 
+              merchant_id = ?,
+              location_data = ?,
+              expires_at = ?
+            WHERE state = ?`,
             [
               state, 
               access_token, 
