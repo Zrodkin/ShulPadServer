@@ -196,7 +196,7 @@ export async function GET(request: NextRequest) {
             expires_at = ?
           WHERE state = ?`,
           [access_token, refresh_token, merchant_id, singleLocation.id, convertToMySQLDatetime(expires_at), state]
-        ).catch(error => {
+        ).catch((error: unknown) => {
           logger.error("Error updating pending tokens (non-blocking)", { error })
         })
 
