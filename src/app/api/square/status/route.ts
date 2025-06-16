@@ -79,38 +79,14 @@ export async function GET(request: NextRequest) {
       
       // Try to find the connection by looking for recent entries
       // Since we don't have direct state->org mapping, we'll check recent connections
-      const recentConnectionResult = await db.execute(
-        `SELECT * FROM square_connections 
-         WHERE created_at > NOW() - INTERVAL 10 MINUTE 
-         ORDER BY created_at DESC 
-         LIMIT 1`
-      )
-
-      if (recentConnectionResult.rows.length > 0) {
-        const connection = recentConnectionResult.rows[0]
-        
-        logger.info("Found recent connection that matches timeframe", { 
-          organization_id: connection.organization_id,
-          merchant_id: connection.merchant_id,
-          location_id: connection.location_id 
-        })
-        
-        return NextResponse.json({
-          connected: true,
-          access_token: connection.access_token,
-          refresh_token: connection.refresh_token,
-          merchant_id: connection.merchant_id,
-          location_id: connection.location_id,
-          expires_at: connection.expires_at
-        })
-      }
+     
 
       // If we still can't find it, it's truly not ready yet
-      logger.info("State not found anywhere, still waiting", { state })
-      return NextResponse.json({ 
-        connected: false, 
-        message: "token_not_found" 
-      })
+      logger.info("State not found in pending tokens, still waiting", { state })
+return NextResponse.json({ 
+  connected: false, 
+  message: "token_not_found" 
+})
     }
 
     // SCENARIO 2: Organization-based check (normal operation)
