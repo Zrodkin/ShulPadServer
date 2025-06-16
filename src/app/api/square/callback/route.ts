@@ -155,74 +155,66 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
       }
 
       // Check if merchant has multiple active locations
-      if (activeLocations.length === 1) {
-        // Only one location - auto-select it and proceed normally
-        const singleLocation = activeLocations[0]
-        logger.info("Single location found, auto-selecting", { 
-          location_id: singleLocation.id, 
-          location_name: singleLocation.name 
-        })
+     if (activeLocations.length === 1) {
+  const singleLocation = activeLocations[0]
+  logger.info("Single location found, auto-selecting", { 
+    location_id: singleLocation.id, 
+    location_name: singleLocation.name 
+  })
 
-        // Store directly in permanent table since there's only one choice
-        try {
-          await db.execute("BEGIN")
+  try {
+    await db.execute("START TRANSACTION")
 
-          // Update pending tokens with location info
-          await db.execute(
-            `UPDATE square_pending_tokens SET
-              access_token = ?, 
-              refresh_token = ?, 
-              merchant_id = ?,
-              location_id = ?,
-              expires_at = ?
-            WHERE state = ?`,
-            [state, access_token, refresh_token, merchant_id, singleLocation.id, expires_at]
-          )
+    // Update pending tokens with location info
+    await db.execute(
+      `UPDATE square_pending_tokens SET
+        access_token = ?, 
+        refresh_token = ?, 
+        merchant_id = ?,
+        location_id = ?,
+        expires_at = ?
+      WHERE state = ?`,
+      [access_token, refresh_token, merchant_id, singleLocation.id, expires_at, state]
+    )
 
-          // Store in permanent table
-  const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id);
-        
-        await db.execute(
-  `INSERT INTO square_connections (
-    organization_id, 
-    merchant_id,
-    location_id,
-    access_token, 
-    refresh_token, 
-    expires_at, 
-    created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, NOW())
-ON DUPLICATE KEY UPDATE
-    merchant_id = EXCLUDED.merchant_id,
-    location_id = EXCLUDED.location_id,
-    access_token = EXCLUDED.access_token,
-    refresh_token = EXCLUDED.refresh_token,
-    expires_at = EXCLUDED.expires_at,
-    updated_at = NOW()`,
-  [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
-)
+    // Store in permanent table
+    const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id);
+    
+    await db.execute(
+      `INSERT INTO square_connections (
+        organization_id, 
+        merchant_id,
+        location_id,
+        access_token, 
+        refresh_token, 
+        expires_at, 
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        merchant_id = VALUES(merchant_id),
+        location_id = VALUES(location_id),
+        access_token = VALUES(access_token),
+        refresh_token = VALUES(refresh_token),
+        expires_at = VALUES(expires_at),
+        updated_at = NOW()`,
+      [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, expires_at]
+    )
 
-          await db.execute("COMMIT")
-          logger.info("Single location setup completed", { 
-            organizationId, 
-            merchantId: merchant_id, 
-            locationId: singleLocation.id,
-            locationName: singleLocation.name
-          })
+    await db.execute("COMMIT")
+    
+    // Redirect to success page
+    return NextResponse.redirect(
+      `${request.nextUrl.origin}/api/square/success?success=true&location=${encodeURIComponent(singleLocation.name)}`
+    )
 
-          // Redirect to success page
-          return NextResponse.redirect(
-            `${request.nextUrl.origin}/api/square/success?success=true&location=${encodeURIComponent(singleLocation.name)}`
-          )
-
-        } catch (error) {
-          await db.execute("ROLLBACK")
-          logger.error("Error storing single location", { error })
-          return NextResponse.redirect(
-            `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
-          )
-        }
-      } else {
+  } catch (error) {
+    await db.execute("ROLLBACK")
+    logger.error("Error storing single location", { error })
+    return NextResponse.redirect(
+      `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
+    )
+  }
+} else {
         // Multiple locations - need user to select
         logger.info("Multiple locations found, redirecting to selection", { 
           locations_count: activeLocations.length 
@@ -230,23 +222,24 @@ ON DUPLICATE KEY UPDATE
 
         // Store ALL locations in pending tokens for selection
         try {
-          await db.execute(
-            `UPDATE square_pending_tokens SET
-              access_token = ?, 
-              refresh_token = ?, 
-              merchant_id = ?,
-              location_data = ?,
-              expires_at = ?
-            WHERE state = ?`,
-            [
-              state, 
-              access_token, 
-              refresh_token, 
-              merchant_id, 
-              JSON.stringify(activeLocations),
-              expires_at
-            ]
-          )
+         await db.execute(
+  `UPDATE square_pending_tokens SET
+    access_token = ?, 
+    refresh_token = ?, 
+    merchant_id = ?,
+    location_data = ?,
+    expires_at = ?
+  WHERE state = ?`,
+  [
+    access_token,     // 1st parameter
+    refresh_token,    // 2nd parameter  
+    merchant_id,      // 3rd parameter
+    JSON.stringify(activeLocations), // 4th parameter
+    expires_at,       // 5th parameter
+    state            // 6th parameter (WHERE clause)
+  ]
+)
+
 
           logger.info("OAuth completed, awaiting location selection", { 
             merchant_id, 
