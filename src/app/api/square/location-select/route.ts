@@ -125,14 +125,14 @@ export async function POST(request: NextRequest) {
   normalizedOrganizationId: normalizedOrgId
 })
 
-    // Begin transaction
-    await db.execute("BEGIN")
+    // Begin transaction - FIXED: Use START TRANSACTION instead of BEGIN
+    await db.execute("START TRANSACTION")
 
     try {
       // Store in permanent connections table with selected location
     const normalizedOrgId = normalizeOrganizationId(organization_id, merchant_id);
       
-      // Store in permanent connections table with selected location
+      // Store in permanent connections table with selected location - FIXED: Use VALUES instead of EXCLUDED
     await db.execute(
   `INSERT INTO square_connections (
     organization_id, 
@@ -144,17 +144,18 @@ export async function POST(request: NextRequest) {
     created_at
   ) VALUES (?, ?, ?, ?, ?, ?, NOW())
 ON DUPLICATE KEY UPDATE
-    merchant_id = EXCLUDED.merchant_id,
-    location_id = EXCLUDED.location_id,
-    access_token = EXCLUDED.access_token,
-    refresh_token = EXCLUDED.refresh_token,
-    expires_at = EXCLUDED.expires_at,
+    merchant_id = VALUES(merchant_id),
+    location_id = VALUES(location_id),
+    access_token = VALUES(access_token),
+    refresh_token = VALUES(refresh_token),
+    expires_at = VALUES(expires_at),
     updated_at = NOW()`,
   [normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at]
 )
 
       // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
       // This allows iOS polling to find the final state
+      // FIXED: Correct parameter order
       await db.execute(
         `UPDATE square_pending_tokens SET
           access_token = ?, 
@@ -164,7 +165,7 @@ ON DUPLICATE KEY UPDATE
           location_data = NULL,
           expires_at = ?
         WHERE state = ?`,
-        [state, access_token, refresh_token, merchant_id, location_id, expires_at]
+        [access_token, refresh_token, merchant_id, location_id, expires_at, state]
       )
 
       await db.execute("COMMIT")
