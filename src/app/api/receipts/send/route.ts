@@ -22,6 +22,7 @@ interface SendReceiptRequest {
   organization_name?: string;
   organization_tax_id?: string;
   organization_receipt_message?: string;
+   include_pdf?: boolean;
 }
 
 interface OrganizationSettings {
@@ -98,7 +99,8 @@ export async function POST(request: NextRequest) {
       amount, 
       transaction_id, 
       order_id,
-      payment_date 
+      payment_date,
+      include_pdf = true
     } = body
 
     // Comprehensive input validation
@@ -164,7 +166,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Send email with retry logic
-    const emailResult = await sendReceiptEmail(receiptData, orgSettings)
+    const emailResult = await sendReceiptEmail(receiptData, orgSettings, include_pdf);
     
     if (emailResult.success) {
       // Update receipt log with success
@@ -443,36 +445,53 @@ function generateReceiptData(orgSettings: OrganizationSettings, donationData: {
 }
 
 // Email sending function
-async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: OrganizationSettings): Promise<EmailResult> {
+async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: OrganizationSettings, includePDF: boolean = false): Promise<EmailResult> {
   try {
     const htmlContent = generateReceiptHTML(receiptData);
-    const textContent = generateReceiptText(receiptData); // Also update text version for consistency
+    const textContent = generateReceiptText(receiptData);
+    
+    // Generate PDF attachment if requested
+    let attachments = undefined;
+    if (includePDF) {
+      try {
+        const pdfBuffer = await generateTaxInvoicePDF(receiptData);
+        attachments = [{
+          content: pdfBuffer.toString('base64'),
+          filename: `Tax_Receipt_${receiptData.donation.transactionId}.pdf`,
+          type: 'application/pdf',
+          disposition: 'attachment'
+        }];
+      } catch (pdfError) {
+        logger.error("Failed to generate PDF attachment", { error: pdfError });
+        // Continue without PDF - don't fail the entire email
+      }
+    }
 
     const msg = {
       to: receiptData.donor.email,
       from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com', // More generic if used by many
+        email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com',
         name: 'ShulPad'
       },
-      subject: 'Thank You For Your Donation!', // <-- SUBJECT LINE CHANGED
+      subject: 'Thank You For Your Donation!',
       text: textContent,
       html: htmlContent,
+      ...(attachments && { attachments }), // Only add if PDF was generated
       categories: ['donation-receipt', `org-${orgSettings.id}`],
       customArgs: {
         organization_id: orgSettings.id,
-        // transaction_id is useful for SendGrid tracking even if not on receipt face
-        transaction_id: receiptData.donation.transactionId, 
-        amount: receiptData.donation.amount.toString()
+        transaction_id: receiptData.donation.transactionId,
+        amount: receiptData.donation.amount.toString(),
+        has_pdf: includePDF.toString() // Track PDF inclusion
       },
       trackingSettings: {
-        clickTracking: { enable: true, enableText: true }, // Consider enabling for links
+        clickTracking: { enable: true, enableText: true },
         openTracking: { enable: true },
         subscriptionTracking: { enable: false }
       }
     };
 
     const response = await sgMail.send(msg);
-    // Ensure response and headers are as expected before accessing x-message-id
     const messageId = (response && response[0] && response[0].headers && response[0].headers['x-message-id']) 
                       ? response[0].headers['x-message-id'] 
                       : undefined;
@@ -644,4 +663,53 @@ function generateReceiptText(data: ReceiptData): string {
   receipt += `Powered by CharityPad\n`;
 
   return receipt;
+}
+
+// Add PDF generation function
+async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
+  const PDFDocument = require('pdfkit');
+  
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks: Buffer[] = [];
+      
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+      
+      // Header
+      doc.fontSize(20).text(data.organization.name, { align: 'center' });
+      doc.fontSize(12).text('Official Tax Receipt', { align: 'center' });
+      doc.moveDown(2);
+      
+      // Receipt details
+      doc.fontSize(14).text('DONATION DETAILS', { underline: true });
+      doc.moveDown(0.5);
+      
+      doc.fontSize(12);
+      doc.text(`Donation Amount: ${data.donation.formattedAmount}`, { continued: false });
+      doc.text(`Date of Donation: ${data.donation.date}`);
+      
+      if (data.organization.taxId) {
+        doc.text(`Tax ID (EIN): ${data.organization.taxId}`);
+      }
+      
+      doc.moveDown(1);
+      doc.text(`Donor Email: ${data.donor.email}`);
+      
+      // Footer
+      doc.moveDown(2);
+      doc.fontSize(10);
+      doc.text('This receipt is for your tax records. Please retain for filing purposes.', { align: 'center' });
+      
+      if (data.organization.contactEmail) {
+        doc.text(`Questions? Contact: ${data.organization.contactEmail}`, { align: 'center' });
+      }
+      
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
