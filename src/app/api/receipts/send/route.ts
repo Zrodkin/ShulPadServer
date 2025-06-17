@@ -780,144 +780,244 @@ function generateReceiptText(data: ReceiptData): string {
   return receipt;
 }
 
-// Clean PDF receipt without unnecessary boxes and info
+// Professional receipt PDF matching the sophisticated design
 async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
-  logger.info("Starting clean PDF generation", { transactionId: data.donation.transactionId });
+  logger.info("Starting sophisticated PDF generation", { transactionId: data.donation.transactionId });
   
   try {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     
-    // Simple, clean colors
-    const darkText = [32, 32, 32];        // #202020
-    const mediumText = [96, 96, 96];      // #606060  
-    const lightText = [128, 128, 128];    // #808080
-    const borderColor = [220, 220, 220];  // #dcdcdc
+    // Professional colors matching the design
+    const darkText = [26, 26, 26];        // #1a1a1a
+    const mediumText = [102, 102, 102];   // #666666
+    const lightText = [153, 153, 153];    // #999999
+    const borderColor = [229, 229, 229];  // #e5e5e5
+    const bgColor = [248, 248, 248];      // #f8f8f8
     
     const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 40;
+    const margin = 40; // ~60px equivalent
     const contentWidth = pageWidth - (margin * 2);
     
-    let y = 50;
+    let y = 45;
     
-    // SIMPLE HEADER - Just organization name and title
-    doc.setFontSize(28);
+    // HEADER SECTION
+    // Organization name (logo style)
+    doc.setFontSize(20);
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.organization.name, margin, y);
+    
+    // Receipt number (top right)
+    const receiptNumber = `#R${Date.now().toString().slice(-6)}`;
+    doc.setFontSize(8);
+    doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
+    doc.text('RECEIPT NUMBER', pageWidth - margin, y - 5, { align: 'right' });
+    doc.setFontSize(10);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFont('helvetica', 'bold');
-    doc.text(data.organization.name, pageWidth / 2, y, { align: 'center' });
+    doc.text(receiptNumber, pageWidth - margin, y + 2, { align: 'right' });
     
-    y += 20;
+    y += 30;
     
-    doc.setFontSize(18);
+    // Main title
+    doc.setFontSize(30);
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.setFont('helvetica', '300'); // Light weight
+    doc.text('Donation Receipt', margin, y);
+    
+    y += 12;
+    
+    // Subtitle
+    doc.setFontSize(10);
     doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
     doc.setFont('helvetica', 'normal');
-    doc.text('Donation Receipt', pageWidth / 2, y, { align: 'center' });
+    doc.text('Official Tax Receipt for Income Tax Purposes', margin, y);
     
-    y += 15;
+    y += 5;
     
-    // Simple border line under header
+    // Header border
     doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
     doc.setLineWidth(0.5);
     doc.line(margin, y, pageWidth - margin, y);
     
     y += 35;
     
-    // THANK YOU MESSAGE (same as email)
-    doc.setFontSize(16);
+    // DONOR INFORMATION SECTION
+    // Received From
+    doc.setFontSize(8);
     doc.setTextColor(lightText[0], lightText[1], lightText[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RECEIVED FROM', margin, y);
+    
+    y += 8;
+    doc.setFontSize(12);
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFont('helvetica', 'normal');
-    const thankYouText = `Thank you for your generous contribution to ${data.organization.name}. Your support is greatly appreciated and helps us continue our mission.`;
-    const thankYouLines = doc.splitTextToSize(thankYouText, contentWidth - 20);
+    doc.text(data.donor.email, margin, y);
     
-    thankYouLines.forEach((line: string, index: number) => {
-      doc.text(line, pageWidth / 2, y + (index * 6), { align: 'center' });
-    });
+    y += 20;
     
-    y += (thankYouLines.length * 6) + 40;
+    // Date Issued
+    doc.setFontSize(8);
+    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DATE ISSUED', margin, y);
     
-    // DONATION DETAILS - Simple table like email
-    const tableData = [
-      { label: 'Amount', value: data.donation.formattedAmount },
-      { label: 'Date', value: data.donation.date }
+    y += 8;
+    doc.setFontSize(12);
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.donation.date, margin, y);
+    
+    y += 35;
+    
+    // DONATION DETAILS BOX
+    doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+    doc.roundedRect(margin, y - 5, contentWidth, 60, 3, 3, 'F');
+    
+    y += 10;
+    
+    // Detail rows
+    const detailRows = [
+      { label: 'Donation Date', value: data.donation.date },
+      { label: 'Amount', value: data.donation.formattedAmount, isAmount: true }
     ];
     
     if (data.organization.taxId) {
-      tableData.push({ label: 'Tax ID (EIN)', value: data.organization.taxId });
+      detailRows.splice(1, 0, { label: 'Tax ID (EIN)', value: data.organization.taxId });
     }
     
-    // Simple table with clean spacing
-    tableData.forEach((row, index) => {
-      const rowY = y + (index * 25);
+    detailRows.forEach((row, index) => {
+      const rowY = y + (index * 15);
       
-      // Bottom border for each row (except last)
-      if (index < tableData.length - 1) {
+      // Add border line above amount (last row)
+      if (index === detailRows.length - 1) {
         doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-        doc.setLineWidth(0.3);
-        doc.line(margin, rowY + 18, pageWidth - margin, rowY + 18);
+        doc.setLineWidth(1);
+        doc.line(margin + 10, rowY - 5, pageWidth - margin - 10, rowY - 5);
       }
       
-      // Label (left side, bold)
-      doc.setFontSize(16);
-      doc.setTextColor(lightText[0], lightText[1], lightText[2]);
-      doc.setFont('helvetica', 'bold');
-      doc.text(row.label, margin, rowY + 12);
-      
-      // Value (right side, normal)
-      doc.setFontSize(16);
+      // Label
+      doc.setFontSize(10);
       doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
       doc.setFont('helvetica', 'normal');
-      doc.text(row.value, pageWidth - margin, rowY + 12, { align: 'right' });
+      doc.text(row.label, margin + 10, rowY);
+      
+      // Value
+      if (row.isAmount) {
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+      } else {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+      }
+      doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+      doc.text(row.value, pageWidth - margin - 10, rowY, { align: 'right' });
     });
     
-    y += (tableData.length * 25) + 30;
+    y += 80;
     
-    // SIMPLE TAX NOTICE
-    doc.setFontSize(11);
-    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
+    // THANK YOU MESSAGE SECTION
+    doc.setFillColor(250, 250, 250);
+    doc.roundedRect(margin, y - 5, contentWidth, 40, 3, 3, 'F');
+    
+    y += 8;
+    
+    // Message title
+    doc.setFontSize(18);
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFont('helvetica', 'normal');
-    doc.text('This receipt is for your tax records. Please retain for filing purposes.', pageWidth / 2, y, { align: 'center' });
+    doc.text('Thank You for Your Generosity', pageWidth / 2, y, { align: 'center' });
+    
+    y += 15;
+    
+    // Message text
+    doc.setFontSize(10);
+    doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
+    doc.setFont('helvetica', 'normal');
+    const messageText = `Thank you for your generous contribution to ${data.organization.name}. Your support is greatly appreciated and helps us continue our mission.`;
+    const messageLines = doc.splitTextToSize(messageText, contentWidth - 40);
+    messageLines.forEach((line: string, index: number) => {
+      doc.text(line, pageWidth / 2, y + (index * 4), { align: 'center' });
+    });
     
     y += 40;
     
-    // FOOTER - Simple contact info if available
-    if (data.organization.contactEmail || data.organization.website) {
-      // Simple line separator
-      doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-      doc.setLineWidth(0.5);
-      doc.line(margin + 100, y, pageWidth - margin - 100, y);
-      
-      y += 20;
-      
-      doc.setFontSize(14);
-      doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
-      doc.setFont('helvetica', 'normal');
-      
-      if (data.organization.contactEmail) {
-        doc.text(`Questions? ${data.organization.contactEmail}`, pageWidth / 2, y, { align: 'center' });
-        y += 10;
-      }
-      
-      if (data.organization.website) {
-        doc.text(`Visit our website: ${data.organization.website}`, pageWidth / 2, y, { align: 'center' });
-        y += 10;
-      }
+    // TAX INFORMATION BOX
+    doc.setFillColor(250, 250, 250);
+    doc.setDrawColor(darkText[0], darkText[1], darkText[2]);
+    doc.setLineWidth(2);
+    // Left border only
+    doc.line(margin, y, margin, y + 25);
+    doc.rect(margin, y, contentWidth, 25, 'F');
+    
+    y += 8;
+    
+    doc.setFontSize(9);
+    doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
+    doc.setFont('helvetica', 'normal');
+    let taxText = `Tax Deductible Information: We confirm that we received your donation of ${data.donation.formattedAmount}. `;
+    taxText += `No goods or services were provided in exchange for this gift. This letter serves as official documentation for tax purposes.`;
+    if (data.organization.taxId) {
+      taxText += ` Our Tax ID Number is: ${data.organization.taxId}`;
     }
     
-    // Simple powered by footer
-    y += 15;
+    const taxLines = doc.splitTextToSize(taxText, contentWidth - 20);
+    taxLines.forEach((line: string, index: number) => {
+      doc.text(line, margin + 10, y + (index * 4));
+    });
+    
+    y += 50;
+    
+    // FOOTER SECTION
+    // Footer border
+    doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageWidth - margin, y);
+    
+    doc.setFillColor(250, 250, 250);
+    doc.rect(margin, y, contentWidth, 25, 'F');
+    
+    y += 12;
+    
+    // Footer content
     doc.setFontSize(12);
-    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
-    doc.text('Powered by Shulpad', pageWidth / 2, y, { align: 'center' });
+    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.organization.name, margin + 10, y);
+    
+    // Contact info (center)
+    if (data.organization.contactEmail || data.organization.website) {
+      let contactText = '';
+      if (data.organization.contactEmail) contactText += data.organization.contactEmail;
+      if (data.organization.website) {
+        if (contactText) contactText += ' • ';
+        contactText += data.organization.website;
+      }
+      
+      doc.setFontSize(8);
+      doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
+      doc.text(contactText, pageWidth / 2, y, { align: 'center' });
+    }
+    
+    // EIN (right)
+    if (data.organization.taxId) {
+      doc.setFontSize(8);
+      doc.setTextColor(lightText[0], lightText[1], lightText[2]);
+      doc.text(`EIN: ${data.organization.taxId}`, pageWidth - margin - 10, y - 4, { align: 'right' });
+      doc.text('501(c)(3) Nonprofit', pageWidth - margin - 10, y, { align: 'right' });
+    }
     
     // Convert to buffer
     const pdfArrayBuffer = doc.output('arraybuffer');
     const pdfBuffer = Buffer.from(pdfArrayBuffer);
     
-    logger.info(`Clean PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+    logger.info(`Sophisticated PDF generated successfully, size: ${pdfBuffer.length} bytes`);
     return pdfBuffer;
     
   } catch (error) {
-    logger.error("Error generating clean PDF", { error });
+    logger.error("Error generating sophisticated PDF", { error });
     throw error;
   }
 }
