@@ -842,7 +842,7 @@ async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
     doc.setLineWidth(0.5);
     doc.line(margin, y, pageWidth - margin, y);
     
-    y += 40;
+    y += 25;
     
     // DONATION DETAILS BOX - Clean with just essential info
     const boxHeight = 40;
@@ -877,7 +877,7 @@ async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
       doc.text(row.value, pageWidth - margin - 8, rowY, { align: 'right' });
     });
     
-    y += boxHeight + 20;
+    y += boxHeight + 10;
     
     // THANK YOU MESSAGE SECTION
     const messageHeight = 30;
@@ -904,7 +904,7 @@ async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
       doc.text(line, pageWidth / 2, y + (index * 4), { align: 'center' });
     });
     
-    y += messageHeight + 15;
+    y += messageHeight + 8;
     
     // TAX INFORMATION BOX
     const taxHeight = 20;
