@@ -780,15 +780,15 @@ function generateReceiptText(data: ReceiptData): string {
   return receipt;
 }
 
-// Professional receipt PDF matching the sophisticated design
+// Clean PDF receipt with only essential information
 async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
-  logger.info("Starting sophisticated PDF generation", { transactionId: data.donation.transactionId });
+  logger.info("Starting clean PDF generation", { transactionId: data.donation.transactionId });
   
   try {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     
-    // Professional colors matching the design
+    // Professional colors
     const darkText = [26, 26, 26];        // #1a1a1a
     const mediumText = [102, 102, 102];   // #666666
     const lightText = [153, 153, 153];    // #999999
@@ -796,92 +796,65 @@ async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
     const bgColor = [248, 248, 248];      // #f8f8f8
     
     const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 40; // ~60px equivalent
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 25;
     const contentWidth = pageWidth - (margin * 2);
     
-    let y = 45;
+    let y = 40;
     
     // HEADER SECTION
-    // Organization name (logo style)
-    doc.setFontSize(20);
+    // Organization name and receipt number on same line
+    doc.setFontSize(16);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('helvetica', 'bold');
     doc.text(data.organization.name, margin, y);
     
     // Receipt number (top right)
     const receiptNumber = `#R${Date.now().toString().slice(-6)}`;
-    doc.setFontSize(8);
-    doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
-    doc.text('RECEIPT NUMBER', pageWidth - margin, y - 5, { align: 'right' });
-    doc.setFontSize(10);
+    doc.setFontSize(9);
+    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
+    doc.text('RECEIPT NUMBER', pageWidth - margin, y - 8, { align: 'right' });
+    doc.setFontSize(11);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
     doc.setFont('helvetica', 'bold');
-    doc.text(receiptNumber, pageWidth - margin, y + 2, { align: 'right' });
+    doc.text(receiptNumber, pageWidth - margin, y, { align: 'right' });
     
-    y += 30;
+    y += 25;
     
     // Main title
-    doc.setFontSize(30);
+    doc.setFontSize(24);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFont('helvetica', '300'); // Light weight
+    doc.setFont('helvetica', '300');
     doc.text('Donation Receipt', margin, y);
     
-    y += 12;
+    y += 8;
     
     // Subtitle
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
     doc.setFont('helvetica', 'normal');
     doc.text('Official Tax Receipt for Income Tax Purposes', margin, y);
     
-    y += 5;
+    y += 15;
     
     // Header border
     doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
     doc.setLineWidth(0.5);
     doc.line(margin, y, pageWidth - margin, y);
     
-    y += 35;
+    y += 40;
     
-    // DONOR INFORMATION SECTION
-    // Received From
-    doc.setFontSize(8);
-    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('RECEIVED FROM', margin, y);
-    
-    y += 8;
-    doc.setFontSize(12);
-    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFont('helvetica', 'normal');
-    doc.text(data.donor.email, margin, y);
-    
-    y += 20;
-    
-    // Date Issued
-    doc.setFontSize(8);
-    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
-    doc.setFont('helvetica', 'bold');
-    doc.text('DATE ISSUED', margin, y);
-    
-    y += 8;
-    doc.setFontSize(12);
-    doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFont('helvetica', 'normal');
-    doc.text(data.donation.date, margin, y);
-    
-    y += 35;
-    
-    // DONATION DETAILS BOX
+    // DONATION DETAILS BOX - Clean with just essential info
+    const boxHeight = 40;
     doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-    doc.roundedRect(margin, y - 5, contentWidth, 60, 3, 3, 'F');
+    doc.roundedRect(margin, y, contentWidth, boxHeight, 2, 2, 'F');
     
-    y += 10;
+    y += 12;
     
-    // Detail rows
+    // Simple detail rows - no overlapping lines
     const detailRows = [
-      { label: 'Donation Date', value: data.donation.date },
-      { label: 'Amount', value: data.donation.formattedAmount, isAmount: true }
+      { label: 'Date', value: data.donation.date },
+      { label: 'Amount', value: data.donation.formattedAmount }
     ];
     
     if (data.organization.taxId) {
@@ -889,103 +862,91 @@ async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
     }
     
     detailRows.forEach((row, index) => {
-      const rowY = y + (index * 15);
-      
-      // Add border line above amount (last row)
-      if (index === detailRows.length - 1) {
-        doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-        doc.setLineWidth(1);
-        doc.line(margin + 10, rowY - 5, pageWidth - margin - 10, rowY - 5);
-      }
+      const rowY = y + (index * 12);
       
       // Label
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
       doc.setFont('helvetica', 'normal');
-      doc.text(row.label, margin + 10, rowY);
+      doc.text(row.label, margin + 8, rowY);
       
-      // Value
-      if (row.isAmount) {
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-      } else {
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-      }
+      // Value - consistent styling for all
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
       doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-      doc.text(row.value, pageWidth - margin - 10, rowY, { align: 'right' });
+      doc.text(row.value, pageWidth - margin - 8, rowY, { align: 'right' });
     });
     
-    y += 80;
+    y += boxHeight + 20;
     
     // THANK YOU MESSAGE SECTION
+    const messageHeight = 30;
     doc.setFillColor(250, 250, 250);
-    doc.roundedRect(margin, y - 5, contentWidth, 40, 3, 3, 'F');
+    doc.roundedRect(margin, y, contentWidth, messageHeight, 2, 2, 'F');
     
     y += 8;
     
     // Message title
-    doc.setFontSize(18);
+    doc.setFontSize(14);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('helvetica', 'bold');
     doc.text('Thank You for Your Generosity', pageWidth / 2, y, { align: 'center' });
     
-    y += 15;
+    y += 8;
     
     // Message text
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
     doc.setFont('helvetica', 'normal');
     const messageText = `Thank you for your generous contribution to ${data.organization.name}. Your support is greatly appreciated and helps us continue our mission.`;
-    const messageLines = doc.splitTextToSize(messageText, contentWidth - 40);
+    const messageLines = doc.splitTextToSize(messageText, contentWidth - 20);
     messageLines.forEach((line: string, index: number) => {
       doc.text(line, pageWidth / 2, y + (index * 4), { align: 'center' });
     });
     
-    y += 40;
+    y += messageHeight + 15;
     
     // TAX INFORMATION BOX
+    const taxHeight = 20;
     doc.setFillColor(250, 250, 250);
-    doc.setDrawColor(darkText[0], darkText[1], darkText[2]);
-    doc.setLineWidth(2);
-    // Left border only
-    doc.line(margin, y, margin, y + 25);
-    doc.rect(margin, y, contentWidth, 25, 'F');
+    doc.rect(margin, y, contentWidth, taxHeight, 'F');
+    // Left border accent
+    doc.setFillColor(darkText[0], darkText[1], darkText[2]);
+    doc.rect(margin, y, 2, taxHeight, 'F');
     
-    y += 8;
+    y += 6;
     
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
     doc.setFont('helvetica', 'normal');
     let taxText = `Tax Deductible Information: We confirm that we received your donation of ${data.donation.formattedAmount}. `;
-    taxText += `No goods or services were provided in exchange for this gift. This letter serves as official documentation for tax purposes.`;
+    taxText += `No goods or services were provided in exchange for this gift.`;
     if (data.organization.taxId) {
-      taxText += ` Our Tax ID Number is: ${data.organization.taxId}`;
+      taxText += ` Our Tax ID: ${data.organization.taxId}`;
     }
     
-    const taxLines = doc.splitTextToSize(taxText, contentWidth - 20);
+    const taxLines = doc.splitTextToSize(taxText, contentWidth - 15);
     taxLines.forEach((line: string, index: number) => {
-      doc.text(line, margin + 10, y + (index * 4));
+      doc.text(line, margin + 8, y + (index * 3));
     });
     
-    y += 50;
+    // FOOTER SECTION (at bottom of page)
+    const footerY = pageHeight - 25;
     
-    // FOOTER SECTION
     // Footer border
     doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
     doc.setLineWidth(0.5);
-    doc.line(margin, y, pageWidth - margin, y);
+    doc.line(margin, footerY - 8, pageWidth - margin, footerY - 8);
     
+    // Footer background
     doc.setFillColor(250, 250, 250);
-    doc.rect(margin, y, contentWidth, 25, 'F');
+    doc.rect(margin, footerY - 8, contentWidth, 20, 'F');
     
-    y += 12;
-    
-    // Footer content
-    doc.setFontSize(12);
+    // Organization name (left)
+    doc.setFontSize(10);
     doc.setTextColor(darkText[0], darkText[1], darkText[2]);
-    doc.setFont('helvetica', 'normal');
-    doc.text(data.organization.name, margin + 10, y);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.organization.name, margin + 5, footerY);
     
     // Contact info (center)
     if (data.organization.contactEmail || data.organization.website) {
@@ -998,26 +959,28 @@ async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
       
       doc.setFontSize(8);
       doc.setTextColor(mediumText[0], mediumText[1], mediumText[2]);
-      doc.text(contactText, pageWidth / 2, y, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.text(contactText, pageWidth / 2, footerY, { align: 'center' });
     }
     
     // EIN (right)
     if (data.organization.taxId) {
       doc.setFontSize(8);
       doc.setTextColor(lightText[0], lightText[1], lightText[2]);
-      doc.text(`EIN: ${data.organization.taxId}`, pageWidth - margin - 10, y - 4, { align: 'right' });
-      doc.text('501(c)(3) Nonprofit', pageWidth - margin - 10, y, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.text(`EIN: ${data.organization.taxId}`, pageWidth - margin - 5, footerY - 3, { align: 'right' });
+      doc.text('501(c)(3) Nonprofit', pageWidth - margin - 5, footerY + 1, { align: 'right' });
     }
     
     // Convert to buffer
     const pdfArrayBuffer = doc.output('arraybuffer');
     const pdfBuffer = Buffer.from(pdfArrayBuffer);
     
-    logger.info(`Sophisticated PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+    logger.info(`Clean PDF generated, size: ${pdfBuffer.length} bytes`);
     return pdfBuffer;
     
   } catch (error) {
-    logger.error("Error generating sophisticated PDF", { error });
+    logger.error("Error generating PDF", { error });
     throw error;
   }
 }
