@@ -470,7 +470,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
     const msg = {
       to: receiptData.donor.email,
       from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'hello@shulpad.com',
+        email: process.env.SENDGRID_FROM_EMAIL || 'info@shulpad.com',
         name: 'ShulPad'
       },
       subject: 'Thank You For Your Donation!',
