@@ -666,50 +666,52 @@ function generateReceiptText(data: ReceiptData): string {
 }
 
 // Add PDF generation function
+// Alternative PDF generation using jsPDF
 async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
-  const PDFDocument = require('pdfkit');
+  logger.info("Starting PDF generation with jsPDF", { transactionId: data.donation.transactionId });
   
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ margin: 50 });
-      const chunks: Buffer[] = [];
-      
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      
-      // Header
-      doc.fontSize(20).text(data.organization.name, { align: 'center' });
-      doc.fontSize(12).text('Official Tax Receipt', { align: 'center' });
-      doc.moveDown(2);
-      
-      // Receipt details
-      doc.fontSize(14).text('DONATION DETAILS', { underline: true });
-      doc.moveDown(0.5);
-      
-      doc.fontSize(12);
-      doc.text(`Donation Amount: ${data.donation.formattedAmount}`, { continued: false });
-      doc.text(`Date of Donation: ${data.donation.date}`);
-      
-      if (data.organization.taxId) {
-        doc.text(`Tax ID (EIN): ${data.organization.taxId}`);
-      }
-      
-      doc.moveDown(1);
-      doc.text(`Donor Email: ${data.donor.email}`);
-      
-      // Footer
-      doc.moveDown(2);
-      doc.fontSize(10);
-      doc.text('This receipt is for your tax records. Please retain for filing purposes.', { align: 'center' });
-      
-      if (data.organization.contactEmail) {
-        doc.text(`Questions? Contact: ${data.organization.contactEmail}`, { align: 'center' });
-      }
-      
-      doc.end();
-    } catch (error) {
-      reject(error);
+  try {
+    const { jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text(data.organization.name, 105, 30, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.text('Official Tax Receipt', 105, 45, { align: 'center' });
+    
+    // Content
+    doc.setFontSize(14);
+    doc.text('DONATION DETAILS', 20, 70);
+    
+    doc.setFontSize(12);
+    doc.text(`Donation Amount: ${data.donation.formattedAmount}`, 20, 90);
+    doc.text(`Date of Donation: ${data.donation.date}`, 20, 105);
+    
+    if (data.organization.taxId) {
+      doc.text(`Tax ID (EIN): ${data.organization.taxId}`, 20, 120);
     }
-  });
+    
+    doc.text(`Donor Email: ${data.donor.email}`, 20, 140);
+    
+    // Footer
+    doc.setFontSize(10);
+    doc.text('This receipt is for your tax records. Please retain for filing purposes.', 105, 200, { align: 'center' });
+    
+    if (data.organization.contactEmail) {
+      doc.text(`Questions? Contact: ${data.organization.contactEmail}`, 105, 215, { align: 'center' });
+    }
+    
+    // Convert to buffer
+    const pdfArrayBuffer = doc.output('arraybuffer');
+    const pdfBuffer = Buffer.from(pdfArrayBuffer);
+    
+    logger.info(`PDF generated successfully with jsPDF, size: ${pdfBuffer.length} bytes`);
+    return pdfBuffer;
+    
+  } catch (error) {
+    logger.error("Error generating PDF with jsPDF", { error });
+    throw error;
+  }
 }
