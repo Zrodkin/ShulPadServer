@@ -516,6 +516,7 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
 
 
 // Clean, simple generateReceiptHTML function
+// Fixed generateReceiptHTML function with better margins and layout
 function generateReceiptHTML(data: ReceiptData): string {
   // Helper to escape HTML special characters
   const escapeHtml = (unsafeText: string | undefined): string => {
@@ -530,222 +531,200 @@ function generateReceiptHTML(data: ReceiptData): string {
 
   const safeOrgName = escapeHtml(data.organization.name);
   const safeTaxId = escapeHtml(data.organization.taxId);
-  const safeReceiptMessage = escapeHtml(data.organization.message);
   const orgContactEmail = data.organization.contactEmail ? escapeHtml(data.organization.contactEmail) : '';
   const orgWebsite = data.organization.website ? escapeHtml(data.organization.website) : '';
-  const safeDonorEmail = escapeHtml(data.donor.email);
 
   return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Donation Receipt - ${safeOrgName}</title>
-    <style>
+    <style type="text/css">
+      body { 
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
+        font-size: 16px; 
+        line-height: 1.6em; 
+        color: #333333; 
+        margin: 0; 
+        padding: 20px; 
+        width: 100% !important; 
+        -webkit-font-smoothing: antialiased; 
+        background-color: #f4f4f7;
+        box-sizing: border-box;
+      }
+      
+      .email-container {
+        max-width: 600px; 
+        margin: 0 auto; 
+        background-color: #ffffff; 
+        border-radius: 8px; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+        overflow: hidden;
+      }
+      
+      .header {
+        padding: 40px 40px 30px; 
+        text-align: center; 
+        border-bottom: 1px solid #eeeeee;
+      }
+      
+      .org-name {
+        font-size: 28px; 
+        font-weight: bold; 
+        color: #222222; 
+        margin: 0 0 8px 0;
+      }
+      
+      .receipt-subject {
+        font-size: 18px; 
+        color: #555555; 
+        font-weight: 500;
+        margin: 0;
+      }
+      
+      .content {
+        padding: 30px 40px;
+      }
+      
+      .thank-you-note {
+        font-size: 16px; 
+        color: #444444; 
+        margin: 0 0 30px 0; 
+        text-align: center; 
+        line-height: 1.6em;
+      }
+      
+      .details-table {
+        width: 100%; 
+        margin: 0; 
+        border-collapse: collapse;
+      }
+      
+      .details-table th {
+        padding: 15px 0; 
+        text-align: left; 
+        font-weight: bold; 
+        color: #444444; 
+        border-bottom: 1px solid #dddddd; 
+        vertical-align: top; 
+        width: 40%;
+        font-size: 16px;
+      }
+      
+      .details-table td {
+        padding: 15px 0; 
+        text-align: right; 
+        color: #555555; 
+        border-bottom: 1px solid #dddddd; 
+        vertical-align: top; 
+        width: 60%;
+        font-size: 16px;
+      }
+      
+      .amount-value {
+        font-size: 20px; 
+        font-weight: 600; 
+        color: #2563eb;
+      }
+      
+      .footer {
+        text-align: center; 
+        padding: 25px 40px; 
+        border-top: 1px solid #eeeeee; 
+        font-size: 14px; 
+        color: #888888; 
+        background-color: #f9f9f9;
+      }
+      
+      .footer p {
+        margin: 8px 0;
+      }
+      
+      .footer a {
+        color: #007bff; 
+        text-decoration: none;
+      }
+      
+      .footer a:hover {
+        text-decoration: underline;
+      }
+      
+      /* Mobile responsive */
+      @media screen and (max-width: 600px) {
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+          padding: 10px;
         }
-        .container {
-            background-color: #ffffff;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-        }
+        
         .header {
-            text-align: center;
-            margin-bottom: 40px;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            margin: -40px -40px 40px -40px;
-            padding: 40px;
-            border-radius: 12px 12px 0 0;
-            color: white;
+          padding: 30px 25px 20px;
         }
-        .header h1 {
-            color: #ffffff;
-            margin: 0 0 10px 0;
-            font-size: 28px;
-            font-weight: 600;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .header p {
-            color: rgba(255,255,255,0.9);
-            margin: 5px 0;
-            font-size: 16px;
-        }
+        
         .content {
-            margin-bottom: 30px;
+          padding: 25px 25px;
         }
-        .thank-you {
-            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-            padding: 25px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            text-align: center;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        .thank-you h2 {
-            color: #2d3748;
-            margin: 0 0 15px 0;
-            font-size: 24px;
-            font-weight: 600;
-        }
-        .thank-you p {
-            color: #4a5568;
-            margin: 0;
-            font-size: 16px;
-        }
-        .details {
-            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-            border: none;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        }
-        .detail-row {
-            display: flex;
-            padding: 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.3);
-            align-items: center;
-            background: rgba(255,255,255,0.7);
-        }
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        .detail-row:nth-child(even) {
-            background: rgba(255,255,255,0.9);
-        }
-        .detail-label {
-            font-weight: 600;
-            color: #2d3748;
-            min-width: 140px;
-            font-size: 16px;
-        }
-        .detail-value {
-            color: #1a202c;
-            font-size: 16px;
-            flex: 1;
-        }
-        .amount {
-            font-size: 24px;
-            font-weight: 700;
-            color: #38a169;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        }
+        
         .footer {
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 1px solid #e9ecef;
-            text-align: center;
+          padding: 20px 25px;
         }
-        .footer p {
-            color: #6c757d;
-            margin: 8px 0;
-            font-size: 14px;
+        
+        .org-name {
+          font-size: 24px;
         }
-        .footer a {
-            color: #4299e1;
-            text-decoration: none;
+        
+        .details-table th,
+        .details-table td {
+          padding: 12px 0;
+          font-size: 15px;
         }
-        .footer a:hover {
-            text-decoration: underline;
-            color: #3182ce;
+        
+        .amount-value {
+          font-size: 18px;
         }
-        .tax-notice {
-            background: linear-gradient(135deg, #a8e6cf 0%, #88d8a3 100%);
-            border: 1px solid #68d391;
-            color: #22543d;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 30px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .tax-notice p {
-            margin: 0;
-            font-size: 14px;
-            font-weight: 500;
-        }
-        @media (max-width: 600px) {
-            body { padding: 10px; }
-            .container { padding: 20px; }
-            .detail-row { 
-                flex-direction: column; 
-                align-items: flex-start; 
-                padding: 15px;
-            }
-            .detail-label { 
-                min-width: auto; 
-                margin-bottom: 5px;
-            }
-        }
+      }
     </style>
-</head>
-<body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>${safeOrgName}</h1>
-            <p>Donation Receipt</p>
-        </div>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="header">
+        <div class="org-name">${safeOrgName}</div>
+        <div class="receipt-subject">Donation Receipt</div>
+      </div>
 
-        <!-- Thank You Message -->
-        <div class="thank-you">
-            <h2>Thank You!</h2>
-            <p>Your generous donation is greatly appreciated and helps us continue our mission.</p>
-        </div>
+      <div class="content">
+        <p class="thank-you-note">
+          Thank you for your generous contribution to ${safeOrgName}. Your support is greatly appreciated and helps us continue our mission.
+        </p>
 
-        <!-- Donation Details -->
-        <div class="details">
-            <div class="detail-row">
-                <div class="detail-label">Donation Amount:</div>
-                <div class="detail-value amount">${data.donation.formattedAmount}</div>
-            </div>
-            <div class="detail-row">
-                <div class="detail-label">Date:</div>
-                <div class="detail-value">${escapeHtml(data.donation.date)}</div>
-            </div>
-            <div class="detail-row">
-                <div class="detail-label">Donor Email:</div>
-                <div class="detail-value">${safeDonorEmail}</div>
-            </div>
-            ${safeTaxId ? `
-            <div class="detail-row">
-                <div class="detail-label">Tax ID (EIN):</div>
-                <div class="detail-value">${safeTaxId}</div>
-            </div>
-            ` : ''}
-        </div>
+        <table class="details-table" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <th>Donation Amount</th>
+            <td>
+              <span class="amount-value">${data.donation.formattedAmount}</span>
+            </td>
+          </tr>
+          <tr>
+            <th>Date of Donation</th>
+            <td>${escapeHtml(data.donation.date)}</td>
+          </tr>
+          ${safeTaxId ? `
+          <tr>
+            <th>Tax ID (EIN)</th>
+            <td>${safeTaxId}</td>
+          </tr>
+          ` : ''}
+        </table>
+      </div>
 
-        <!-- Custom Message -->
-        ${safeReceiptMessage && safeReceiptMessage !== 'Thank you for your generous donation!' ? `
-        <div style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 10px; text-align: center; font-style: italic; color: #1565c0; border: 1px solid #90caf9;">
-            "${safeReceiptMessage}"
-        </div>
-        ` : ''}
-
-        <!-- Tax Notice -->
-        <div class="tax-notice">
-            <p>This receipt is for your tax records. Please retain for filing purposes.</p>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <p><strong>${safeOrgName}</strong></p>
-            ${orgContactEmail ? `<p>Questions? Contact us at <a href="mailto:${orgContactEmail}">${orgContactEmail}</a></p>` : ''}
-            ${orgWebsite ? `<p>Visit our website: <a href="${orgWebsite}" target="_blank">${orgWebsite}</a></p>` : ''}
-            <p style="margin-top: 20px; color: #adb5bd; font-size: 12px;">Powered by Shulpad</p>
-        </div>
+      <div class="footer">
+        ${orgContactEmail ? `<p>Questions? <a href="mailto:${orgContactEmail}">${orgContactEmail}</a></p>` : ''}
+        ${orgWebsite ? `<p>Visit our website: <a href="${orgWebsite}" target="_blank">${orgWebsite}</a></p>` : ''}
+        <p style="margin-top: 15px;">Powered by Shulpad</p>
+      </div>
     </div>
-</body>
-</html>`;
+  </body>
+  </html>`;
 }
 
 // --- MODIFIED Text Receipt Generation (for consistency with HTML version) ---
@@ -804,6 +783,7 @@ function generateReceiptText(data: ReceiptData): string {
   return receipt;
 }
 
+// Clean, simple generateTaxInvoicePDF function
 // Clean, simple generateTaxInvoicePDF function
 async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
   logger.info("Starting clean PDF generation", { transactionId: data.donation.transactionId });
