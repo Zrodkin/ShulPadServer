@@ -514,8 +514,8 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
   }
 }
 
-// --- MODIFIED HTML Receipt Generation ---
-// Updated generateReceiptHTML function with authentic receipt design
+
+// Clean, simple generateReceiptHTML function
 function generateReceiptHTML(data: ReceiptData): string {
   // Helper to escape HTML special characters
   const escapeHtml = (unsafeText: string | undefined): string => {
@@ -531,446 +531,221 @@ function generateReceiptHTML(data: ReceiptData): string {
   const safeOrgName = escapeHtml(data.organization.name);
   const safeTaxId = escapeHtml(data.organization.taxId);
   const safeReceiptMessage = escapeHtml(data.organization.message);
-  const orgLogoUrl = data.organization.logoUrl ? escapeHtml(data.organization.logoUrl) : '';
   const orgContactEmail = data.organization.contactEmail ? escapeHtml(data.organization.contactEmail) : '';
   const orgWebsite = data.organization.website ? escapeHtml(data.organization.website) : '';
   const safeDonorEmail = escapeHtml(data.donor.email);
 
-  // Default Shulpad logo if organization doesn't have one
-  const logoUrl = orgLogoUrl || 'https://i.imgur.com/G30gYf3.png';
-  const logoAlt = orgLogoUrl ? `${safeOrgName} Logo` : 'Shulpad Logo';
-
   return `
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<html data-editor-version="2" class="sg-campaigns" xmlns="http://www.w3.org/1999/xhtml">
-    <head>
-      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1">
-      <!--[if !mso]><!-->
-      <meta http-equiv="X-UA-Compatible" content="IE=Edge">
-      <!--<![endif]-->
-      <!--[if (gte mso 9)|(IE)]>
-      <xml>
-        <o:OfficeDocumentSettings>
-          <o:AllowPNG/>
-          <o:PixelsPerInch>96</o:PixelsPerInch>
-        </o:OfficeDocumentSettings>
-      </xml>
-      <![endif]-->
-      <!--[if (gte mso 9)|(IE)]>
-  <style type="text/css">
-    body {width: 600px;margin: 0 auto;}
-    table {border-collapse: collapse;}
-    table, td {mso-table-lspace: 0pt;mso-table-rspace: 0pt;}
-    img {-ms-interpolation-mode: bicubic;}
-  </style>
-<![endif]-->
-      <style type="text/css">
-    body, p, div {
-      font-family: inherit;
-      font-size: 14px;
-    }
-    body {
-      color: #000000;
-    }
-    body a {
-      color: #1188E6;
-      text-decoration: none;
-    }
-    p { margin: 0; padding: 0; }
-    table.wrapper {
-      width:100% !important;
-      table-layout: fixed;
-      -webkit-font-smoothing: antialiased;
-      -webkit-text-size-adjust: 100%;
-      -moz-text-size-adjust: 100%;
-      -ms-text-size-adjust: 100%;
-    }
-    img.max-width {
-      max-width: 100% !important;
-    }
-    .column.of-2 {
-      width: 50%;
-    }
-    .column.of-3 {
-      width: 33.333%;
-    }
-    .column.of-4 {
-      width: 25%;
-    }
-    @media screen and (max-width:480px) {
-      .preheader .rightColumnContent,
-      .footer .rightColumnContent {
-        text-align: left !important;
-      }
-      .preheader .rightColumnContent div,
-      .preheader .rightColumnContent span,
-      .footer .rightColumnContent div,
-      .footer .rightColumnContent span {
-        text-align: left !important;
-      }
-      .preheader .rightColumnContent,
-      .preheader .leftColumnContent {
-        font-size: 80% !important;
-        padding: 5px 0;
-      }
-      table.wrapper-mobile {
-        width: 100% !important;
-        table-layout: fixed;
-      }
-      img.max-width {
-        height: auto !important;
-        max-width: 100% !important;
-      }
-      a.bulletproof-button {
-        display: block !important;
-        width: auto !important;
-        font-size: 80%;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-      }
-      .columns {
-        width: 100% !important;
-      }
-      .column {
-        display: block !important;
-        width: 100% !important;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-        margin-left: 0 !important;
-        margin-right: 0 !important;
-      }
-      .social-icon-column {
-        display: inline-block !important;
-      }
-    }
-  </style>
-      <!--user entered Head Start--><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet"><style>
-body {font-family: 'Inter', sans-serif;}
-</style><!--End Head user entered-->
-    </head>
-    <body>
-      <center class="wrapper" data-link-color="#1188E6" data-body-style="font-size:14px; font-family:inherit; color:#000000; background-color:#f1f5f9;">
-        <div class="webkit">
-          <table cellpadding="0" cellspacing="0" border="0" width="100%" class="wrapper" bgcolor="#f1f5f9">
-            <tr>
-              <td valign="top" bgcolor="#f1f5f9" width="100%">
-                <table width="100%" role="content-container" class="outer" align="center" cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td width="100%">
-                      <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                        <tr>
-                          <td>
-                            <!--[if mso]>
-    <center>
-    <table><tr><td width="600">
-  <![endif]-->
-                                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px;" align="center">
-                                      <tr>
-                                        <td role="modules-container" style="padding:0px 0px 0px 0px; color:#000000; text-align:left;" bgcolor="#FFFFFF" width="100%" align="left">
-                                        
-                                        <!-- Header Logo Section -->
-                                        <table border="0" cellpadding="0" cellspacing="0" align="center" width="100%" role="module" data-type="columns" style="padding:30px 0px 30px 0px;" bgcolor="#f8fafc" data-distribution="1">
-                                          <tbody>
-                                            <tr role="module-content">
-                                              <td height="100%" valign="top">
-                                                <table width="600" style="width:600px; border-spacing:0; border-collapse:collapse; margin:0px 0px 0px 0px;" cellpadding="0" cellspacing="0" align="left" border="0" bgcolor="" class="column column-0">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px;margin:0px;border-spacing:0;">
-                                                        <table class="wrapper" role="module" data-type="image" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                                          <tbody>
-                                                            <tr>
-                                                              <td style="font-size:6px; line-height:10px; padding:0px 0px 0px 0px;" valign="top" align="center">
-                                                                <img class="max-width" border="0" style="display:block; color:#000000; text-decoration:none; font-family:Inter, sans-serif; font-size:16px;" width="150" alt="${logoAlt}" data-proportionally-constrained="true" data-responsive="false" src="${logoUrl}" height="auto">
-                                                              </td>
-                                                            </tr>
-                                                          </tbody>
-                                                        </table>
-                                                        
-                                                        <!-- Organization Info -->
-                                                        ${orgContactEmail || orgWebsite ? `
-                                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                                          <tbody>
-                                                            <tr>
-                                                              <td style="padding:10px 0px 0px 0px; line-height:16px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                                <div>
-                                                                  ${orgContactEmail ? `<div style="font-family: inherit; text-align: center"><span style="color: #64748b; font-size: 10px">${orgContactEmail}</span></div>` : ''}
-                                                                  ${orgWebsite ? `<div style="font-family: inherit; text-align: center"><span style="color: #64748b; font-size: 10px">${orgWebsite}</span></div>` : ''}
-                                                                </div>
-                                                              </td>
-                                                            </tr>
-                                                          </tbody>
-                                                        </table>
-                                                        ` : ''}
-                                                      </td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Receipt Header -->
-                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:30px 0px 40px 0px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                <div>
-                                                  <div style="font-family: inherit; text-align: center"><span style="color: #475569; font-size: 12px"><strong>THANK YOU FOR YOUR GENEROUS DONATION</strong></span></div>
-                                                  <div style="font-family: inherit; text-align: center"><br></div>
-                                                  <div style="font-family: inherit; text-align: center"><span style="color: #475569; font-size: 14px"><strong>${safeOrgName}</strong></span></div>
-                                                  <div style="font-family: inherit; text-align: center"><span style="color: #475569; font-size: 12px"><strong>Donation Receipt</strong></span></div>
-                                                  <div style="font-family: inherit; text-align: center"><span style="color: #475569; font-size: 12px">${escapeHtml(data.donation.date)}</span></div>
-                                                </div>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Receipt Details -->
-                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:0px 40px 40px 40px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                <div>
-                                                  <div style="font-family: inherit; text-align: inherit"><span style="color: #475569; font-size: 12px"><strong>Donor Email:</strong></span><span style="color: #475569; font-size: 12px"> ${safeDonorEmail}</span></div>
-                                                  <div style="font-family: inherit; text-align: inherit"><span style="color: #475569; font-size: 12px"><strong>Donation Date:</strong></span><span style="color: #475569; font-size: 12px"> ${escapeHtml(data.donation.date)}</span></div>
-                                                  ${safeTaxId ? `<div style="font-family: inherit; text-align: inherit"><span style="color: #475569; font-size: 12px"><strong>Tax ID (EIN):</strong></span><span style="color: #475569; font-size: 12px"> ${safeTaxId}</span></div>` : ''}
-                                                </div>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Divider -->
-                                        <table class="module" role="module" data-type="divider" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:0px 40px 0px 40px;" role="module-content" height="100%" valign="top" bgcolor="">
-                                                <table border="0" cellpadding="0" cellspacing="0" align="center" width="100%" height="2px" style="line-height:2px; font-size:2px;">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px 0px 2px 0px;" bgcolor="#475569"></td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Amount Header -->
-                                        <table border="0" cellpadding="0" cellspacing="0" align="center" width="100%" role="module" data-type="columns" style="padding:0px 40px 0px 40px;" bgcolor="#FFFFFF" data-distribution="1,1">
-                                          <tbody>
-                                            <tr role="module-content">
-                                              <td height="100%" valign="top">
-                                                <table width="260" style="width:260px; border-spacing:0; border-collapse:collapse; margin:0px 0px 0px 0px;" cellpadding="0" cellspacing="0" align="left" border="0" bgcolor="" class="column column-0">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px;margin:0px;border-spacing:0;">
-                                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                                          <tbody>
-                                                            <tr>
-                                                              <td style="padding:15px 0px 15px 0px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                                <div><div style="font-family: inherit; text-align: left"><span style="color: #475569; font-size: 12px"><strong>DONATION AMOUNT</strong></span></div></div>
-                                                              </td>
-                                                            </tr>
-                                                          </tbody>
-                                                        </table>
-                                                      </td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                                <table width="260" style="width:260px; border-spacing:0; border-collapse:collapse; margin:0px 0px 0px 0px;" cellpadding="0" cellspacing="0" align="left" border="0" bgcolor="" class="column column-1">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px;margin:0px;border-spacing:0;">
-                                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                                          <tbody>
-                                                            <tr>
-                                                              <td style="padding:15px 0px 15px 0px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                                <div><div style="font-family: inherit; text-align: right"><span style="color: #475569; font-size: 12px"><strong>TOTAL</strong></span></div></div>
-                                                              </td>
-                                                            </tr>
-                                                          </tbody>
-                                                        </table>
-                                                      </td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Divider -->
-                                        <table class="module" role="module" data-type="divider" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:0px 40px 0px 40px;" role="module-content" height="100%" valign="top" bgcolor="">
-                                                <table border="0" cellpadding="0" cellspacing="0" align="center" width="100%" height="2px" style="line-height:2px; font-size:2px;">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px 0px 2px 0px;" bgcolor="#475569"></td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Amount Details -->
-                                        <table border="0" cellpadding="0" cellspacing="0" align="center" width="100%" role="module" data-type="columns" style="padding:0px 40px 0px 40px;" bgcolor="#FFFFFF" data-distribution="1,1">
-                                          <tbody>
-                                            <tr role="module-content">
-                                              <td height="100%" valign="top">
-                                                <table width="260" style="width:260px; border-spacing:0; border-collapse:collapse; margin:0px 0px 0px 0px;" cellpadding="0" cellspacing="0" align="left" border="0" bgcolor="" class="column column-0">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px;margin:0px;border-spacing:0;">
-                                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                                          <tbody>
-                                                            <tr>
-                                                              <td style="padding:15px 0px 15px 0px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                                <div><div style="font-family: inherit; text-align: left"><span style="color: #475569; font-size: 12px">Charitable Donation</span></div></div>
-                                                              </td>
-                                                            </tr>
-                                                          </tbody>
-                                                        </table>
-                                                      </td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                                <table width="260" style="width:260px; border-spacing:0; border-collapse:collapse; margin:0px 0px 0px 0px;" cellpadding="0" cellspacing="0" align="left" border="0" bgcolor="" class="column column-1">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px;margin:0px;border-spacing:0;">
-                                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                                          <tbody>
-                                                            <tr>
-                                                              <td style="padding:15px 0px 15px 0px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                                <div><div style="font-family: inherit; text-align: right"><span style="color: #1f2937; font-size: 16px; font-weight: bold">${data.donation.formattedAmount}</span></div></div>
-                                                              </td>
-                                                            </tr>
-                                                          </tbody>
-                                                        </table>
-                                                      </td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Bottom Divider -->
-                                        <table class="module" role="module" data-type="divider" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:0px 40px 0px 40px;" role="module-content" height="100%" valign="top" bgcolor="">
-                                                <table border="0" cellpadding="0" cellspacing="0" align="center" width="100%" height="1px" style="line-height:1px; font-size:1px;">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td style="padding:0px 0px 1px 0px;" bgcolor="#475569"></td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Spacer -->
-                                        <table class="module" role="module" data-type="spacer" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:0px 0px 30px 0px;" role="module-content" bgcolor="">
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Custom Message -->
-                                        ${safeReceiptMessage && safeReceiptMessage !== 'Thank you for your generous donation!' ? `
-                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:20px 40px 20px 40px; line-height:22px; text-align:inherit;" height="100%" valign="top" bgcolor="" role="module-content">
-                                                <div><div style="font-family: inherit; text-align: center"><span style="color: #475569; font-size: 12px; font-style: italic;">"${safeReceiptMessage}"</span></div></div>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-                                        ` : ''}
-
-                                        <!-- Tax Notice -->
-                                        <table class="module" role="module" data-type="text" border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
-                                          <tbody>
-                                            <tr>
-                                              <td style="padding:40px 30px 40px 30px; line-height:22px; text-align:inherit; background-color:#475569;" height="100%" valign="top" bgcolor="#475569" role="module-content">
-                                                <div>
-                                                  <div style="font-family: inherit; text-align: center"><span style="color: #ffffff; font-size: 12px"><strong>This receipt is for your tax records. Please retain for filing purposes.</strong></span></div>
-                                                  <div style="font-family: inherit; text-align: center"><br></div>
-                                                  <div style="font-family: inherit; text-align: center"><span style="color: #ffffff; font-size: 12px"><strong>Your generosity makes a difference!</strong></span></div>
-                                                </div>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        <!-- Footer -->
-                                        <div data-role="module-unsubscribe" class="module" role="module" data-type="unsubscribe" style="background-color:#f8fafc; color:#64748b; font-size:12px; line-height:20px; padding:16px 16px 16px 16px; text-align:Center;">
-                                          <div class="Unsubscribe--addressLine">
-                                            <p class="Unsubscribe--senderName" style="font-size:12px; line-height:20px;">${safeOrgName}</p>
-                                            ${orgContactEmail ? `<p style="font-size:12px; line-height:20px;">Questions? Contact us at <a href="mailto:${orgContactEmail}" style="color:#475569;">${orgContactEmail}</a></p>` : ''}
-                                            ${orgWebsite ? `<p style="font-size:12px; line-height:20px;">Visit our website: <a href="${orgWebsite}" target="_blank" style="color:#475569;">${orgWebsite}</a></p>` : ''}
-                                          </div>
-                                        </div>
-
-                                        <!-- Powered By -->
-                                        <table border="0" cellpadding="0" cellspacing="0" class="module" data-role="module-button" data-type="button" role="module" style="table-layout:fixed;" width="100%">
-                                          <tbody>
-                                            <tr>
-                                              <td align="center" bgcolor="#f8fafc" class="outer-td" style="padding:20px 0px 20px 0px; background-color:#f8fafc;">
-                                                <table border="0" cellpadding="0" cellspacing="0" class="wrapper-mobile" style="text-align:center;">
-                                                  <tbody>
-                                                    <tr>
-                                                      <td align="center" bgcolor="#f1f5f9" class="inner-td" style="border-radius:6px; font-size:16px; text-align:center; background-color:inherit;">
-                                                        <a href="https://shulpad.com/" style="background-color:#f1f5f9; border:1px solid #f1f5f9; border-color:#f1f5f9; border-radius:25px; border-width:1px; color:#94a3b8; display:inline-block; font-size:10px; font-weight:normal; letter-spacing:0px; line-height:normal; padding:5px 18px 5px 18px; text-align:center; text-decoration:none; border-style:solid; font-family:Inter,sans-serif;" target="_blank">♥ POWERED BY SHULPAD</a>
-                                                      </td>
-                                                    </tr>
-                                                  </tbody>
-                                                </table>
-                                              </td>
-                                            </tr>
-                                          </tbody>
-                                        </table>
-
-                                        </td>
-                                      </tr>
-                                    </table>
-                                    <!--[if mso]>
-                                  </td>
-                                </tr>
-                              </table>
-                            </center>
-                            <![endif]-->
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donation Receipt - ${safeOrgName}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            margin: -40px -40px 40px -40px;
+            padding: 40px;
+            border-radius: 12px 12px 0 0;
+            color: white;
+        }
+        .header h1 {
+            color: #ffffff;
+            margin: 0 0 10px 0;
+            font-size: 28px;
+            font-weight: 600;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header p {
+            color: rgba(255,255,255,0.9);
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .thank-you {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .thank-you h2 {
+            color: #2d3748;
+            margin: 0 0 15px 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .thank-you p {
+            color: #4a5568;
+            margin: 0;
+            font-size: 16px;
+        }
+        .details {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            border: none;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        .detail-row {
+            display: flex;
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            align-items: center;
+            background: rgba(255,255,255,0.7);
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-row:nth-child(even) {
+            background: rgba(255,255,255,0.9);
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #2d3748;
+            min-width: 140px;
+            font-size: 16px;
+        }
+        .detail-value {
+            color: #1a202c;
+            font-size: 16px;
+            flex: 1;
+        }
+        .amount {
+            font-size: 24px;
+            font-weight: 700;
+            color: #38a169;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid #e9ecef;
+            text-align: center;
+        }
+        .footer p {
+            color: #6c757d;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #4299e1;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+            color: #3182ce;
+        }
+        .tax-notice {
+            background: linear-gradient(135deg, #a8e6cf 0%, #88d8a3 100%);
+            border: 1px solid #68d391;
+            color: #22543d;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .tax-notice p {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .container { padding: 20px; }
+            .detail-row { 
+                flex-direction: column; 
+                align-items: flex-start; 
+                padding: 15px;
+            }
+            .detail-label { 
+                min-width: auto; 
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>${safeOrgName}</h1>
+            <p>Donation Receipt</p>
         </div>
-      </center>
-    </body>
-  </html>`;
+
+        <!-- Thank You Message -->
+        <div class="thank-you">
+            <h2>Thank You!</h2>
+            <p>Your generous donation is greatly appreciated and helps us continue our mission.</p>
+        </div>
+
+        <!-- Donation Details -->
+        <div class="details">
+            <div class="detail-row">
+                <div class="detail-label">Donation Amount:</div>
+                <div class="detail-value amount">${data.donation.formattedAmount}</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Date:</div>
+                <div class="detail-value">${escapeHtml(data.donation.date)}</div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Donor Email:</div>
+                <div class="detail-value">${safeDonorEmail}</div>
+            </div>
+            ${safeTaxId ? `
+            <div class="detail-row">
+                <div class="detail-label">Tax ID (EIN):</div>
+                <div class="detail-value">${safeTaxId}</div>
+            </div>
+            ` : ''}
+        </div>
+
+        <!-- Custom Message -->
+        ${safeReceiptMessage && safeReceiptMessage !== 'Thank you for your generous donation!' ? `
+        <div style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 10px; text-align: center; font-style: italic; color: #1565c0; border: 1px solid #90caf9;">
+            "${safeReceiptMessage}"
+        </div>
+        ` : ''}
+
+        <!-- Tax Notice -->
+        <div class="tax-notice">
+            <p>This receipt is for your tax records. Please retain for filing purposes.</p>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>${safeOrgName}</strong></p>
+            ${orgContactEmail ? `<p>Questions? Contact us at <a href="mailto:${orgContactEmail}">${orgContactEmail}</a></p>` : ''}
+            ${orgWebsite ? `<p>Visit our website: <a href="${orgWebsite}" target="_blank">${orgWebsite}</a></p>` : ''}
+            <p style="margin-top: 20px; color: #adb5bd; font-size: 12px;">Powered by Shulpad</p>
+        </div>
+    </div>
+</body>
+</html>`;
 }
 
 // --- MODIFIED Text Receipt Generation (for consistency with HTML version) ---
@@ -1029,274 +804,167 @@ function generateReceiptText(data: ReceiptData): string {
   return receipt;
 }
 
-// Add PDF generation function
-// Alternative PDF generation using jsPDF
-// Updated generateTaxInvoicePDF function with modern styling
+// Clean, simple generateTaxInvoicePDF function
 async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
-  logger.info("Starting PDF generation with modern styling", { transactionId: data.donation.transactionId });
+  logger.info("Starting clean PDF generation", { transactionId: data.donation.transactionId });
   
   try {
     const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     
-    // Define colors matching our email template
-    const colors = {
-      primary: [71, 85, 105],     // #475569 (slate)
-      secondary: [100, 116, 139], // #64748b (lighter slate)
-      accent: [31, 41, 55],       // #1f2937 (dark gray for amount)
-      light: [248, 250, 252],     // #f8fafc (very light gray)
-      white: [255, 255, 255],     // #ffffff
-      text: [55, 65, 81]          // #374151 (main text)
-    };
+    // Beautiful gradient colors
+    const primaryBlue = [67, 153, 225];      // #4299e1
+    const darkBlue = [49, 130, 206];         // #3182ce  
+    const lightBlue = [235, 248, 255];       // #ebf8ff
+    const green = [56, 161, 105];            // #38a169
+    const darkGray = [45, 55, 72];           // #2d3748
+    const mediumGray = [113, 128, 150];      // #718096
+    const lightGray = [247, 250, 252];       // #f7fafc
     
-    // Page dimensions
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 30;
-    const contentWidth = pageWidth - (margin * 2);
+    const margin = 25;
     
-    // Helper function to add a colored rectangle
-    const addColoredRect = (x: number, y: number, width: number, height: number, color: number[]) => {
-      doc.setFillColor(color[0], color[1], color[2]);
-      doc.rect(x, y, width, height, 'F');
-    };
+    let y = 40;
     
-    // Helper function to add text with better styling
-    const addStyledText = (text: string, x: number, y: number, options: {
-      fontSize?: number;
-      color?: number[];
-      align?: 'left' | 'center' | 'right';
-      fontStyle?: 'normal' | 'bold';
-      maxWidth?: number;
-    } = {}) => {
-      const {
-        fontSize = 12,
-        color = colors.text,
-        align = 'left',
-        fontStyle = 'normal',
-        maxWidth = contentWidth
-      } = options;
-      
-      doc.setFontSize(fontSize);
-      doc.setTextColor(color[0], color[1], color[2]);
-      doc.setFont('helvetica', fontStyle);
-      
-      if (align === 'center') {
-        doc.text(text, x, y, { align: 'center', maxWidth });
-      } else if (align === 'right') {
-        doc.text(text, x, y, { align: 'right', maxWidth });
-      } else {
-        doc.text(text, x, y, { maxWidth });
-      }
-    };
-
-    // 1. HEADER SECTION with colored background
-    addColoredRect(0, 0, pageWidth, 60, colors.light);
+    // Header with gradient-like effect
+    doc.setFillColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+    doc.rect(0, 0, pageWidth, 50, 'F');
     
-    // Organization name (large, centered)
-    addStyledText(
-      data.organization.name, 
-      pageWidth / 2, 
-      25, 
-      { fontSize: 22, fontStyle: 'bold', align: 'center', color: colors.primary }
-    );
+    // Organization Name (Header)
+    doc.setFontSize(24);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.organization.name, pageWidth / 2, 25, { align: 'center' });
     
-    // Contact info (smaller, centered)
-    let yPosition = 35;
-    if (data.organization.contactEmail) {
-      addStyledText(
-        data.organization.contactEmail, 
-        pageWidth / 2, 
-        yPosition, 
-        { fontSize: 9, align: 'center', color: colors.secondary }
-      );
-      yPosition += 8;
-    }
-    if (data.organization.website) {
-      addStyledText(
-        data.organization.website, 
-        pageWidth / 2, 
-        yPosition, 
-        { fontSize: 9, align: 'center', color: colors.secondary }
-      );
-    }
-
-    // 2. RECEIPT TITLE SECTION
-    yPosition = 85;
-    addStyledText(
-      'THANK YOU FOR YOUR GENEROUS DONATION', 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 12, fontStyle: 'bold', align: 'center', color: colors.primary }
-    );
+    // Receipt Title
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Donation Receipt', pageWidth / 2, 35, { align: 'center' });
     
-    yPosition += 15;
-    addStyledText(
-      'DONATION RECEIPT', 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 14, fontStyle: 'bold', align: 'center', color: colors.primary }
-    );
+    y = 70;
     
-    yPosition += 10;
-    addStyledText(
-      data.donation.date, 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 10, align: 'center', color: colors.secondary }
-    );
-
-    // 3. DONOR DETAILS SECTION
-    yPosition += 25;
+    // Thank You Section with nice background
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2]);
+    doc.rect(margin, y - 5, pageWidth - (margin * 2), 30, 'F');
     
-    // Section background
-    addColoredRect(margin, yPosition - 5, contentWidth, 35, colors.light);
+    doc.setFontSize(20);
+    doc.setTextColor(darkBlue[0], darkBlue[1], darkBlue[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Thank You!', pageWidth / 2, y + 8, { align: 'center' });
     
-    yPosition += 8;
-    addStyledText('DONOR DETAILS', margin + 10, yPosition, { fontSize: 10, fontStyle: 'bold', color: colors.primary });
+    doc.setFontSize(12);
+    doc.setTextColor(primaryBlue[0], primaryBlue[1], primaryBlue[2]);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Your generous donation helps us continue our mission.', pageWidth / 2, y + 18, { align: 'center' });
     
-    yPosition += 12;
-    addStyledText(`Donor Email: ${data.donor.email}`, margin + 10, yPosition, { fontSize: 10, color: colors.text });
+    y += 50;
     
-    yPosition += 10;
-    addStyledText(`Donation Date: ${data.donation.date}`, margin + 10, yPosition, { fontSize: 10, color: colors.text });
+    // Donation Details Header
+    doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
+    doc.rect(margin, y - 5, pageWidth - (margin * 2), 20, 'F');
     
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.text('Donation Details', pageWidth / 2, y + 5, { align: 'center' });
+    
+    y += 30;
+    
+    // Amount
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Donation Amount:', margin, y);
+    doc.setFontSize(16);
+    doc.setTextColor(green[0], green[1], green[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.donation.formattedAmount, margin + 50, y);
+    
+    y += 15;
+    
+    // Date
+    doc.setFontSize(12);
+    doc.setTextColor(darkGray[0], darkGray[1], darkGray[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Date:', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.donation.date, margin + 50, y);
+    
+    y += 15;
+    
+    // Donor Email
+    doc.setFont('helvetica', 'bold');
+    doc.text('Donor Email:', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(data.donor.email, margin + 50, y);
+    
+    y += 15;
+    
+    // Tax ID (if available)
     if (data.organization.taxId) {
-      yPosition += 10;
-      addStyledText(`Tax ID (EIN): ${data.organization.taxId}`, margin + 10, yPosition, { fontSize: 10, color: colors.text });
+      doc.setFont('helvetica', 'bold');
+      doc.text('Tax ID (EIN):', margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(data.organization.taxId, margin + 50, y);
+      y += 15;
     }
-
-    // 4. AMOUNT SECTION (highlighted)
-    yPosition += 30;
     
-    // Header row with background
-    addColoredRect(margin, yPosition, contentWidth, 20, colors.primary);
+    y += 20;
     
-    addStyledText(
-      'DONATION AMOUNT', 
-      margin + 10, 
-      yPosition + 12, 
-      { fontSize: 10, fontStyle: 'bold', color: colors.white }
-    );
-    
-    addStyledText(
-      'TOTAL', 
-      pageWidth - margin - 10, 
-      yPosition + 12, 
-      { fontSize: 10, fontStyle: 'bold', color: colors.white, align: 'right' }
-    );
-
-    // Amount row
-    yPosition += 25;
-    addColoredRect(margin, yPosition, contentWidth, 25, colors.light);
-    
-    addStyledText(
-      'Charitable Donation', 
-      margin + 10, 
-      yPosition + 15, 
-      { fontSize: 11, color: colors.text }
-    );
-    
-    addStyledText(
-      data.donation.formattedAmount, 
-      pageWidth - margin - 10, 
-      yPosition + 15, 
-      { fontSize: 14, fontStyle: 'bold', color: colors.accent, align: 'right' }
-    );
-
-    // Bottom border for amount section
-    yPosition += 25;
-    addColoredRect(margin, yPosition, contentWidth, 1, colors.primary);
-
-    // 5. CUSTOM MESSAGE (if exists)
+    // Custom Message (if different from default)
     if (data.organization.message && data.organization.message !== 'Thank you for your generous donation!') {
-      yPosition += 20;
-      addStyledText(
-        `"${data.organization.message}"`, 
-        pageWidth / 2, 
-        yPosition, 
-        { fontSize: 11, align: 'center', color: colors.secondary, maxWidth: contentWidth - 40 }
-      );
-      yPosition += 15;
+      doc.setFontSize(11);
+      doc.setTextColor(mediumGray[0], mediumGray[1], mediumGray[2]);
+      doc.setFont('helvetica', 'italic');
+      const messageLines = doc.splitTextToSize(`"${data.organization.message}"`, pageWidth - (margin * 2));
+      doc.text(messageLines, pageWidth / 2, y, { align: 'center' });
+      y += messageLines.length * 5 + 20;
     }
-
-    // 6. TAX NOTICE SECTION
-    yPosition += 20;
-    addColoredRect(margin, yPosition, contentWidth, 45, colors.primary);
     
-    yPosition += 15;
-    addStyledText(
-      'This receipt is for your tax records. Please retain for filing purposes.', 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 10, fontStyle: 'bold', align: 'center', color: colors.white, maxWidth: contentWidth - 20 }
-    );
+    // Tax Notice with green theme
+    doc.setFillColor(168, 230, 207); // Light green
+    doc.rect(margin, y - 5, pageWidth - (margin * 2), 25, 'F');
     
-    yPosition += 15;
-    addStyledText(
-      'Your generosity makes a difference!', 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 10, fontStyle: 'bold', align: 'center', color: colors.white }
-    );
-
-    // 7. FOOTER SECTION
-    yPosition = pageHeight - 40;
+    doc.setFontSize(11);
+    doc.setTextColor(34, 84, 61); // Dark green
+    doc.setFont('helvetica', 'bold');
+    doc.text('This receipt is for your tax records. Please retain for filing purposes.', pageWidth / 2, y + 8, { align: 'center' });
     
-    // Organization info
-    addStyledText(
-      data.organization.name, 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 10, fontStyle: 'bold', align: 'center', color: colors.text }
-    );
+    y += 40;
     
-    yPosition += 10;
+    // Footer
+    doc.setFontSize(10);
+    doc.setTextColor(mediumGray[0], mediumGray[1], mediumGray[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.organization.name, pageWidth / 2, y, { align: 'center' });
+    
+    y += 8;
+    
     if (data.organization.contactEmail) {
-      addStyledText(
-        `Questions? Contact us at ${data.organization.contactEmail}`, 
-        pageWidth / 2, 
-        yPosition, 
-        { fontSize: 8, align: 'center', color: colors.secondary }
-      );
-      yPosition += 8;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Questions? Contact us at ${data.organization.contactEmail}`, pageWidth / 2, y, { align: 'center' });
+      y += 8;
     }
     
     if (data.organization.website) {
-      addStyledText(
-        `Visit our website: ${data.organization.website}`, 
-        pageWidth / 2, 
-        yPosition, 
-        { fontSize: 8, align: 'center', color: colors.secondary }
-      );
-      yPosition += 8;
+      doc.text(`Visit our website: ${data.organization.website}`, pageWidth / 2, y, { align: 'center' });
+      y += 8;
     }
     
-    // Powered by
-    yPosition += 5;
-    addStyledText(
-      '♥ POWERED BY SHULPAD', 
-      pageWidth / 2, 
-      yPosition, 
-      { fontSize: 7, align: 'center', color: colors.secondary }
-    );
-
-    // 8. DECORATIVE ELEMENTS
-    // Add subtle corner decorations
-    addColoredRect(0, 0, 20, 3, colors.primary);
-    addColoredRect(pageWidth - 20, 0, 20, 3, colors.primary);
-    addColoredRect(0, pageHeight - 3, 20, 3, colors.primary);
-    addColoredRect(pageWidth - 20, pageHeight - 3, 20, 3, colors.primary);
+    y += 5;
+    doc.setFontSize(8);
+    doc.setTextColor(180, 180, 180);
+    doc.text('Powered by Shulpad', pageWidth / 2, y, { align: 'center' });
     
     // Convert to buffer
     const pdfArrayBuffer = doc.output('arraybuffer');
     const pdfBuffer = Buffer.from(pdfArrayBuffer);
     
-    logger.info(`Styled PDF generated successfully, size: ${pdfBuffer.length} bytes`);
+    logger.info(`Clean PDF generated successfully, size: ${pdfBuffer.length} bytes`);
     return pdfBuffer;
     
   } catch (error) {
-    logger.error("Error generating styled PDF", { error });
+    logger.error("Error generating clean PDF", { error });
     throw error;
   }
 }
