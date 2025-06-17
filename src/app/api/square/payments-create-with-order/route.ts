@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
           status,
           payment_data,
           created_at
-        ) VALUES (?, $2, $3, $4, $5, $6, $7, NOW())`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           organization_id,
           payment.id,

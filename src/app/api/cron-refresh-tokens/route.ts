@@ -84,11 +84,11 @@ export async function GET(request: Request) {
         try {
           await db.execute(
   `UPDATE square_connections 
-   SET access_token = $1, 
-       refresh_token = $2, 
-       expires_at = $3, 
+   SET access_token = ?, 
+       refresh_token = ?, 
+       expires_at = ?, 
        updated_at = NOW() 
-   WHERE organization_id = $4`,
+   WHERE organization_id = ?`,
   [data.access_token, data.refresh_token, data.expires_at, organization_id],
 )
 
