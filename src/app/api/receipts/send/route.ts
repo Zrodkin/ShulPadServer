@@ -515,7 +515,6 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
 }
 
 
-// Clean, simple generateReceiptHTML function
 // Fixed generateReceiptHTML function with better margins and layout
 function generateReceiptHTML(data: ReceiptData): string {
   // Helper to escape HTML special characters
@@ -699,13 +698,11 @@ function generateReceiptHTML(data: ReceiptData): string {
 
         <table class="details-table" cellpadding="0" cellspacing="0" border="0">
           <tr>
-            <th>Donation Amount</th>
-            <td>
-              <span class="amount-value">${data.donation.formattedAmount}</span>
-            </td>
+            <th>Amount</th>
+            <td>${data.donation.formattedAmount}</td>
           </tr>
           <tr>
-            <th>Date of Donation</th>
+            <th>Date</th>
             <td>${escapeHtml(data.donation.date)}</td>
           </tr>
           ${safeTaxId ? `
@@ -783,7 +780,6 @@ function generateReceiptText(data: ReceiptData): string {
   return receipt;
 }
 
-// Clean, simple generateTaxInvoicePDF function
 // Clean, simple generateTaxInvoicePDF function
 async function generateTaxInvoicePDF(data: ReceiptData): Promise<Buffer> {
   logger.info("Starting clean PDF generation", { transactionId: data.donation.transactionId });
