@@ -64,9 +64,9 @@ export async function GET(request: NextRequest) {
         function redirectToApp() {
           // First, try to use the custom URL scheme to signal the app
           try {
-            // Using charitypad:// scheme to signal completion to the app
+            // Using ShulPad:// scheme to signal completion to the app
             // The path "oauth-complete" will be caught by the app
-            window.location.href = "charitypad://oauth-complete?success=${success}${error ? '&error=' + encodeURIComponent(error) : ''}";
+            window.location.href = "ShulPad://oauth-complete?success=${success}${error ? '&error=' + encodeURIComponent(error) : ''}";
             
             // If we're still here after 300ms, try window.close
             setTimeout(function() {

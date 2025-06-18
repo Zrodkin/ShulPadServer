@@ -221,7 +221,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Select Location - CharityPad</title>
+      <title>Select Location - ShulPad</title>
       <style>
         body {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -299,7 +299,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
     <body>
       <div class="container">
         <h1>Select Your Location</h1>
-        <p class="subtitle">Choose which Square location you want to use with CharityPad:</p>
+        <p class="subtitle">Choose which Square location you want to use with ShulPad:</p>
         
         <div class="locations">
           ${locationOptions}
@@ -362,7 +362,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
               
               // Try to signal the app directly first
               try {
-                window.location.href = \`charitypad://oauth-complete?success=true&location=\${encodeURIComponent(result.location_name)}\`;
+                window.location.href = \`ShulPad://oauth-complete?success=true&location=\${encodeURIComponent(result.location_name)}\`;
               } catch (e) {
                 console.log('Could not signal app directly, polling will handle completion');
               }
@@ -386,7 +386,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
         // Auto-redirect to app after success (keep this as backup)
         setTimeout(() => {
           if (window.location.href.includes('success=true')) {
-            window.location.href = "charitypad://oauth-complete?success=true";
+            window.location.href = "ShulPad://oauth-complete?success=true";
           }
         }, 2000);
       </script>

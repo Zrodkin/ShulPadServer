@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     if (!code) {
       logger.error("Authorization code is missing")
-      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=missing_code`)
+return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missing_code`)
     }
 
     if (!state) {
@@ -208,8 +208,8 @@ export async function GET(request: NextRequest) {
 
         // 🚀 OPTIMIZATION 7: Immediate redirect - don't wait for pending tokens update
         return NextResponse.redirect(
-          `${request.nextUrl.origin}/api/square/success?success=true&location=${encodeURIComponent(singleLocation.name)}`
-        )
+  `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&location_id=${singleLocation.id}&location_name=${encodeURIComponent(singleLocation.name)}`
+)
 
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -259,8 +259,8 @@ export async function GET(request: NextRequest) {
         })
 
         return NextResponse.redirect(
-          `${request.nextUrl.origin}/api/square/location-select?state=${state}&success=true`
-        )
+  `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&requires_location_selection=true&state=${state}`
+)
 
       } catch (error: unknown) {
         if (error instanceof Error) {
