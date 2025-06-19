@@ -248,8 +248,8 @@ export async function GET(request: NextRequest) {
           locations_count: activeLocations.length
         })
 
-        return NextResponse.redirect(
-  `${process.env.NEXTAUTH_URL || 'https://your-domain.com'}/api/square/location-select?state=${state}&success=true`
+       return NextResponse.redirect(
+  `${request.nextUrl.origin}/api/square/location-select?state=${state}&success=true`
 )
 
       } catch (error: unknown) {
