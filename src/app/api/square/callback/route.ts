@@ -249,8 +249,8 @@ export async function GET(request: NextRequest) {
         })
 
         return NextResponse.redirect(
-          `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&requires_location_selection=true&state=${state}`
-        )
+  `${process.env.NEXTAUTH_URL || 'https://your-domain.com'}/api/square/location-select?state=${state}&success=true`
+)
 
       } catch (error: unknown) {
         if (error instanceof Error) {
