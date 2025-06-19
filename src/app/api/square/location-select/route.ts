@@ -1,4 +1,4 @@
-// Fixed: src/app/api/square/location-select/route.ts
+//src/app/api/square/location-select/route.ts
 
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db"
@@ -330,65 +330,56 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
           document.getElementById('continueBtn').disabled = false;
         }
         
-        async function confirmSelection() {
-          if (!selectedLocationId) return;
-          
-          document.querySelector('.container').style.display = 'none';
-          document.getElementById('loading').style.display = 'block';
-          
-          try {
-            const response = await fetch('/api/square/location-select', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                state: '${state}',
-                location_id: selectedLocationId,
-                organization_id: 'default'
-              })
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-              // CRITICAL FIX: Don't redirect immediately
-              // Instead, signal success and let the mobile app's polling pick it up
-              console.log('Location selected successfully:', result);
-              
-              // Update the loading message
-              document.getElementById('loading').innerHTML = 
-                '<p>Location selected! Completing setup...</p>';
-              
-              // Try to signal the app directly first
-              try {
-                window.location.href = \`shulPad://oauth-complete?success=true&location=\${encodeURIComponent(result.location_name)}\`;
-              } catch (e) {
-                console.log('Could not signal app directly, polling will handle completion');
-              }
-              
-              // Fallback: After 3 seconds, show success page
-              setTimeout(() => {
-                window.location.href = \`/api/square/success?success=true&location=\${encodeURIComponent(result.location_name)}\`;
-              }, 3000);
-              
-            } else {
-              alert('Error: ' + (result.error || 'Unknown error'));
-              location.reload();
-            }
-          } catch (error) {
-            console.error('Network error:', error);
-            alert('Network error. Please try again.');
-            location.reload();
-          }
+      async function confirmSelection() {
+  if (!selectedLocationId) return;
+  
+  document.querySelector('.container').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+  
+  try {
+    const response = await fetch('/api/square/location-select', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        state: '${state}',
+        location_id: selectedLocationId,
+        organization_id: 'default'
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('Location selected successfully:', result);
+      
+      // ✅ FIXED: Build complete URL with all OAuth parameters
+      const redirectUrl = \`shulpad://oauth-complete?success=true&merchant_id=\${encodeURIComponent(result.merchant_id)}&location_id=\${encodeURIComponent(result.location_id)}&location_name=\${encodeURIComponent(result.location_name)}\`;
+      
+      // Use meta refresh for most reliable redirect
+      document.head.innerHTML += \`<meta http-equiv="refresh" content="0;url=\${redirectUrl}">\`;
+      
+      // JavaScript fallback
+      setTimeout(() => {
+        try {
+          window.location.href = redirectUrl;
+        } catch(e) {
+          console.log('Direct redirect failed, using success page fallback');
+          window.location.href = \`/api/square/success?success=true&merchant_id=\${encodeURIComponent(result.merchant_id)}&location_id=\${encodeURIComponent(result.location_id)}&location_name=\${encodeURIComponent(result.location_name)}\`;
         }
-        
-        // Auto-redirect to app after success (keep this as backup)
-        setTimeout(() => {
-          if (window.location.href.includes('success=true')) {
-            window.location.href = "shulPad://oauth-complete?success=true";
-          }
-        }, 2000);
+      }, 300);
+      
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+      location.reload();
+    }
+  } catch (error) {
+    console.error('Network error:', error);
+    alert('Network error. Please try again.');
+    location.reload();
+  }
+}
       </script>
     </body>
     </html>

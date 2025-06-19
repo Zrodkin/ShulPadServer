@@ -1,4 +1,4 @@
-// src/app/api/square/success/route.ts
+// src/app/api/square/success/route.ts - IMPROVED VERSION
 import { NextResponse, type NextRequest } from "next/server"
 import { logger } from "@/lib/logger"
 
@@ -6,16 +6,38 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const success = searchParams.get("success") === "true"
   const error = searchParams.get("error")
+  const merchantId = searchParams.get("merchant_id")
+  const locationId = searchParams.get("location_id")
+  const locationName = searchParams.get("location_name")
 
-  logger.info("Success page accessed", { success, error })
+  logger.info("Success page accessed", { success, error, merchantId, locationId, locationName })
 
-  // Generate HTML that communicates back to the app using URL scheme
+  // Build the custom URL scheme redirect with all parameters
+  let schemeUrl = `shulpad://oauth-complete?success=${success}`
+  
+  if (success && merchantId) {
+    schemeUrl += `&merchant_id=${encodeURIComponent(merchantId)}`
+  }
+  if (success && locationId) {
+    schemeUrl += `&location_id=${encodeURIComponent(locationId)}`
+  }
+  if (success && locationName) {
+    schemeUrl += `&location_name=${encodeURIComponent(locationName)}`
+  }
+  if (!success && error) {
+    schemeUrl += `&error=${encodeURIComponent(error)}`
+  }
+
+  logger.info("Redirecting to app with URL", { schemeUrl })
+
+  // Generate HTML with META REFRESH (most reliable method)
   const html = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="refresh" content="1;url=${schemeUrl}">
       <title>${success ? "Authorization Successful" : "Authorization Failed"}</title>
       <style>
         body {
@@ -40,66 +62,91 @@ export async function GET(request: NextRequest) {
         }
         h1 {
           color: ${success ? "#4CAF50" : "#F44336"};
+          margin-bottom: 16px;
         }
         p {
           color: #666;
+          margin-bottom: 12px;
         }
-        .close-msg {
+        .spinner {
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid ${success ? "#4CAF50" : "#F44336"};
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+          animation: spin 1s linear infinite;
+          margin: 20px auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .manual-link {
+          display: inline-block;
           margin-top: 20px;
-          font-size: 14px;
-          color: #999;
+          color: #4CAF50;
+          text-decoration: none;
+          font-weight: 500;
+          padding: 10px 20px;
+          border: 2px solid #4CAF50;
+          border-radius: 6px;
+          transition: all 0.2s;
         }
-        button {
+        .manual-link:hover {
           background-color: #4CAF50;
           color: white;
-          border: none;
-          padding: 10px 20px;
-          margin-top: 10px;
-          cursor: pointer;
-          border-radius: 4px;
+        }
+        .debug-info {
+          margin-top: 20px;
+          font-size: 12px;
+          color: #999;
+          word-break: break-all;
         }
       </style>
       <script>
-        // Function to handle redirection and closing
-        function redirectToApp() {
-          // First, try to use the custom URL scheme to signal the app
+        // JavaScript fallback (backup to meta refresh)
+        setTimeout(function() {
           try {
-            // Using ShulPad:// scheme to signal completion to the app
-            // The path "oauth-complete" will be caught by the app
-            window.location.href = "shulPad://oauth-complete?success=${success}${error ? '&error=' + encodeURIComponent(error) : ''}";
-            
-            // If we're still here after 300ms, try window.close
-            setTimeout(function() {
-              try { 
-                window.close(); 
-              } catch(e) {}
-            }, 300);
+            console.log('Attempting JavaScript redirect to: ${schemeUrl}');
+            window.location.href = "${schemeUrl}";
           } catch(e) {
-            // Fallback if redirection fails
-            console.error("Error redirecting to app:", e);
+            console.error("JavaScript redirect failed:", e);
+          }
+        }, 1500);
+        
+        // Manual redirect function
+        function manualRedirect() {
+          try {
+            window.location.href = "${schemeUrl}";
+          } catch(e) {
+            alert("Unable to redirect automatically. Please return to the app manually.");
           }
         }
-        
-        // Try to redirect as soon as page loads
-        document.addEventListener('DOMContentLoaded', function() {
-          // Show message briefly before attempting redirect
-          setTimeout(redirectToApp, 500);
-          
-          // Also attach to button click and body click
-          document.body.addEventListener('click', redirectToApp);
-          if (document.getElementById('closeButton')) {
-            document.getElementById('closeButton').addEventListener('click', redirectToApp);
-          }
-        });
       </script>
     </head>
     <body>
       <div class="card">
-        <h1>${success ? "Authorization Successful" : "Authorization Failed"}</h1>
-        <p>${success ? "Your account has been connected successfully." : "There was a problem connecting your account."}</p>
-        ${error ? `<p class="close-msg">Error: ${error}</p>` : ''}
-        <button id="closeButton">Return to App</button>
-        <p class="close-msg">Click the button above to return to the app.</p>
+        <h1>${success ? "✅ Authorization Successful" : "❌ Authorization Failed"}</h1>
+        
+        ${success 
+          ? `<p>Your Square account has been connected successfully!</p>
+             ${locationName ? `<p><strong>Location:</strong> ${locationName}</p>` : ''}` 
+          : `<p>There was a problem connecting your account.</p>
+             ${error ? `<p><strong>Error:</strong> ${error}</p>` : ''}`
+        }
+        
+        <div class="spinner"></div>
+        <p>Returning to ShulPad...</p>
+        
+        <!-- Manual fallback link -->
+        <a href="${schemeUrl}" class="manual-link" onclick="manualRedirect(); return false;">
+          Return to App Manually
+        </a>
+        
+        <!-- Debug info (remove in production) -->
+        <div class="debug-info">
+          Debug: ${schemeUrl}
+        </div>
       </div>
     </body>
     </html>
