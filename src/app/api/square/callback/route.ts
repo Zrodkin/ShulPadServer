@@ -1,4 +1,4 @@
-// src/app/api/square/callback/route.ts - OPTIMIZED VERSION
+// src/app/api/square/callback/route.ts - FULLY CONSISTENT SHULPAD:// VERSION
 import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
@@ -31,12 +31,12 @@ export async function GET(request: NextRequest) {
 
     if (!code) {
       logger.error("Authorization code is missing")
-return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missing_code`)
+      return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missing_code`)
     }
 
     if (!state) {
       logger.error("No state parameter received")
-      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=missing_state`)
+      return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missing_state`)
     }
 
     // 🚀 OPTIMIZATION 1: Remove state validation query
@@ -50,9 +50,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
 
     if (!SQUARE_APP_ID || !SQUARE_APP_SECRET || !REDIRECT_URI) {
       logger.error("Missing required environment variables")
-      return NextResponse.redirect(
-        `${request.nextUrl.origin}/api/square/success?success=false&error=server_configuration`,
-      )
+      return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=server_configuration`)
     }
 
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? 
@@ -87,7 +85,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
 
       if (tokenData.error) {
         logger.error("Token exchange error", { error: tokenData.error })
-        return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=token_exchange`)
+        return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=token_exchange`)
       }
     } catch (error: unknown) {
       if (error instanceof Error) {
@@ -98,7 +96,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
       } else {
         logger.error("Unknown error during token exchange", { error })
       }
-      return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=token_exchange`)
+      return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=token_exchange`)
     }
 
     const { access_token, refresh_token, expires_at, merchant_id } = tokenData
@@ -123,9 +121,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
       
       if (!locations || locations.length === 0) {
         logger.warn("No locations found for merchant")
-        return NextResponse.redirect(
-          `${request.nextUrl.origin}/api/square/success?success=false&error=no_locations`
-        )
+        return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=no_locations`)
       }
 
       // Filter to only active locations
@@ -133,9 +129,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
       
       if (activeLocations.length === 0) {
         logger.warn("No active locations found for merchant")
-        return NextResponse.redirect(
-          `${request.nextUrl.origin}/api/square/success?success=false&error=no_active_locations`
-        )
+        return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=no_active_locations`)
       }
 
     } catch (error: unknown) {
@@ -147,9 +141,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
       } else {
         logger.error("Unknown error fetching merchant locations", { error })
       }
-      return NextResponse.redirect(
-        `${request.nextUrl.origin}/api/square/success?success=false&error=location_fetch_failed`
-      )
+      return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=location_fetch_failed`)
     }
 
     // 🚀 OPTIMIZATION 4: Handle single location case with minimal DB operations
@@ -208,8 +200,8 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
 
         // 🚀 OPTIMIZATION 7: Immediate redirect - don't wait for pending tokens update
         return NextResponse.redirect(
-  `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&location_id=${singleLocation.id}&location_name=${encodeURIComponent(singleLocation.name)}`
-)
+          `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&location_id=${singleLocation.id}&location_name=${encodeURIComponent(singleLocation.name)}`
+        )
 
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -220,9 +212,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
         } else {
           logger.error("Unknown error storing single location", { error })
         }
-        return NextResponse.redirect(
-          `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
-        )
+        return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=database_error`)
       }
     } 
     
@@ -259,8 +249,8 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
         })
 
         return NextResponse.redirect(
-  `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&requires_location_selection=true&state=${state}`
-)
+          `shulpad://oauth/callback?success=true&merchant_id=${merchant_id}&requires_location_selection=true&state=${state}`
+        )
 
       } catch (error: unknown) {
         if (error instanceof Error) {
@@ -271,9 +261,7 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
         } else {
           logger.error("Unknown error storing location data for selection", { error })
         }
-        return NextResponse.redirect(
-          `${request.nextUrl.origin}/api/square/success?success=false&error=database_error`
-        )
+        return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=database_error`)
       }
     }
 
@@ -288,6 +276,6 @@ return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=missi
     } else {
       logger.error("Unknown server error during OAuth flow", { error, processing_time_ms: processingTime })
     }
-    return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=server_error`)
+    return NextResponse.redirect(`shulpad://oauth/callback?success=false&error=server_error`)
   }
 }
