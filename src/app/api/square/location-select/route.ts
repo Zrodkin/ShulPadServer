@@ -362,7 +362,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
               
               // Try to signal the app directly first
               try {
-                window.location.href = \`ShulPad://oauth-complete?success=true&location=\${encodeURIComponent(result.location_name)}\`;
+                window.location.href = \`shulPad://oauth-complete?success=true&location=\${encodeURIComponent(result.location_name)}\`;
               } catch (e) {
                 console.log('Could not signal app directly, polling will handle completion');
               }
@@ -386,7 +386,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
         // Auto-redirect to app after success (keep this as backup)
         setTimeout(() => {
           if (window.location.href.includes('success=true')) {
-            window.location.href = "ShulPad://oauth-complete?success=true";
+            window.location.href = "shulPad://oauth-complete?success=true";
           }
         }, 2000);
       </script>
