@@ -212,7 +212,74 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
       `
     }).join('')
 
- return `
+  // Build the script separately to avoid template literal conflicts
+  const script = `
+    let selectedLocationId = null;
+    
+    function selectLocation(locationId) {
+      document.querySelectorAll('.location-option').forEach(el => {
+        el.classList.remove('selected');
+      });
+      
+      event.target.closest('.location-option').classList.add('selected');
+      selectedLocationId = locationId;
+      document.getElementById('continueBtn').disabled = false;
+    }
+    
+    async function confirmSelection() {
+      if (!selectedLocationId) return;
+      
+      document.querySelector('.container').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      
+      try {
+        const response = await fetch('/api/square/location-select', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            state: '${state}',
+            location_id: selectedLocationId,
+            organization_id: 'default'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log('Location selected successfully:', result);
+          
+          const redirectUrl = result.redirect_url;
+          
+          const metaTag = document.createElement('meta');
+          metaTag.httpEquiv = 'refresh';
+          metaTag.content = '0;url=' + redirectUrl;
+          document.head.appendChild(metaTag);
+          
+          setTimeout(() => {
+            try {
+              window.location.href = redirectUrl;
+            } catch(e) {
+              console.error('Redirect failed:', e);
+              document.getElementById('loading').innerHTML = 
+                '<p>Almost done! <a href="' + redirectUrl + '">Click here to return to ShulPad</a></p>';
+            }
+          }, 500);
+          
+        } else {
+          alert('Error: ' + (result.error || 'Unknown error'));
+          location.reload();
+        }
+      } catch (error) {
+        console.error('Network error:', error);
+        alert('Network error. Please try again.');
+        location.reload();
+      }
+    }
+  `.replace('${state}', state); // Replace the placeholder with actual state
+
+  return `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -311,71 +378,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
         </div>
       </div>
 
-      <script>
-        let selectedLocationId = null;
-        
-        function selectLocation(locationId) {
-          document.querySelectorAll('.location-option').forEach(el => {
-            el.classList.remove('selected');
-          });
-          
-          event.target.closest('.location-option').classList.add('selected');
-          selectedLocationId = locationId;
-          document.getElementById('continueBtn').disabled = false;
-        }
-        
-        async function confirmSelection() {
-          if (!selectedLocationId) return;
-          
-          document.querySelector('.container').style.display = 'none';
-          document.getElementById('loading').style.display = 'block';
-          
-          try {
-            const response = await fetch('/api/square/location-select', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                state: '` + state + `',
-                location_id: selectedLocationId,
-                organization_id: 'default'
-              })
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-              console.log('Location selected successfully:', result);
-              
-              const redirectUrl = result.redirect_url;
-              
-              const metaTag = document.createElement('meta');
-              metaTag.httpEquiv = 'refresh';
-              metaTag.content = '0;url=' + redirectUrl;
-              document.head.appendChild(metaTag);
-              
-              setTimeout(() => {
-                try {
-                  window.location.href = redirectUrl;
-                } catch(e) {
-                  console.error('Redirect failed:', e);
-                  document.getElementById('loading').innerHTML = 
-                    '<p>Almost done! <a href="' + redirectUrl + '">Click here to return to ShulPad</a></p>';
-                }
-              }, 500);
-              
-            } else {
-              alert('Error: ' + (result.error || 'Unknown error'));
-              location.reload();
-            }
-          } catch (error) {
-            console.error('Network error:', error);
-            alert('Network error. Please try again.');
-            location.reload();
-          }
-        }
-      </script>
+      <script>${script}</script>
     </body>
     </html>
   `
