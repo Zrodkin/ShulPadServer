@@ -153,20 +153,16 @@ ON DUPLICATE KEY UPDATE
   [normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at]
 )
 
-      // ✅ CRITICAL FIX: Update pending tokens with the SPECIFIC location_id
-      // This allows iOS polling to find the final state
-      // FIXED: Correct parameter order
       await db.execute(
-        `UPDATE square_pending_tokens SET
-          access_token = ?, 
-          refresh_token = ?, 
-          merchant_id = ?,
-          location_id = ?,
-          location_data = NULL,
-          expires_at = ?
-        WHERE state = ?`,
-        [access_token, refresh_token, merchant_id, location_id, expires_at, state]
-      )
+  `UPDATE square_pending_tokens SET
+    access_token = ?, 
+    refresh_token = ?, 
+    merchant_id = ?,
+    location_id = ?,
+    expires_at = ?
+  WHERE state = ?`,
+  [access_token, refresh_token, merchant_id, location_id, expires_at, state]
+)
 
       await db.execute("COMMIT")
 
@@ -179,13 +175,14 @@ ON DUPLICATE KEY UPDATE
 })
 
       // Return success with location info for mobile app
-      return NextResponse.json({ 
-        success: true, 
-        location_name: selectedLocation.name,
-        location_id: location_id,
-        merchant_id: merchant_id,
-        message: "Location selected successfully - iOS app will detect this automatically"
-      })
+     return NextResponse.json({ 
+  success: true, 
+  location_name: selectedLocation.name,
+  location_id: location_id,
+  merchant_id: merchant_id,
+  redirect_url: `shulpad://oauth-complete?success=true&merchant_id=${encodeURIComponent(merchant_id)}&location_id=${encodeURIComponent(location_id)}&location_name=${encodeURIComponent(selectedLocation.name)}`,
+  message: "Location selected successfully"
+})
 
     } catch (dbError) {
       await db.execute("ROLLBACK")
@@ -215,7 +212,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
       `
     }).join('')
 
-  return `
+ return `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -318,68 +315,66 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
         let selectedLocationId = null;
         
         function selectLocation(locationId) {
-          // Remove previous selection
           document.querySelectorAll('.location-option').forEach(el => {
             el.classList.remove('selected');
           });
           
-          // Add selection to clicked option
           event.target.closest('.location-option').classList.add('selected');
-          
           selectedLocationId = locationId;
           document.getElementById('continueBtn').disabled = false;
         }
         
-      async function confirmSelection() {
-  if (!selectedLocationId) return;
-  
-  document.querySelector('.container').style.display = 'none';
-  document.getElementById('loading').style.display = 'block';
-  
-  try {
-    const response = await fetch('/api/square/location-select', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        state: '${state}',
-        location_id: selectedLocationId,
-        organization_id: 'default'
-      })
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      console.log('Location selected successfully:', result);
-      
-      // ✅ FIXED: Build complete URL with all OAuth parameters
-      const redirectUrl = \`shulpad://oauth-complete?success=true&merchant_id=\${encodeURIComponent(result.merchant_id)}&location_id=\${encodeURIComponent(result.location_id)}&location_name=\${encodeURIComponent(result.location_name)}\`;
-      
-      // Use meta refresh for most reliable redirect
-      document.head.innerHTML += \`<meta http-equiv="refresh" content="0;url=\${redirectUrl}">\`;
-      
-      // JavaScript fallback
-      setTimeout(() => {
-        try {
-          window.location.href = redirectUrl;
-        } catch(e) {
-          console.log('Direct redirect failed, using success page fallback');
-          window.location.href = \`/api/square/success?success=true&merchant_id=\${encodeURIComponent(result.merchant_id)}&location_id=\${encodeURIComponent(result.location_id)}&location_name=\${encodeURIComponent(result.location_name)}\`;
+        async function confirmSelection() {
+          if (!selectedLocationId) return;
+          
+          document.querySelector('.container').style.display = 'none';
+          document.getElementById('loading').style.display = 'block';
+          
+          try {
+            const response = await fetch('/api/square/location-select', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                state: '` + state + `',
+                location_id: selectedLocationId,
+                organization_id: 'default'
+              })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              console.log('Location selected successfully:', result);
+              
+              const redirectUrl = result.redirect_url;
+              
+              const metaTag = document.createElement('meta');
+              metaTag.httpEquiv = 'refresh';
+              metaTag.content = '0;url=' + redirectUrl;
+              document.head.appendChild(metaTag);
+              
+              setTimeout(() => {
+                try {
+                  window.location.href = redirectUrl;
+                } catch(e) {
+                  console.error('Redirect failed:', e);
+                  document.getElementById('loading').innerHTML = 
+                    '<p>Almost done! <a href="' + redirectUrl + '">Click here to return to ShulPad</a></p>';
+                }
+              }, 500);
+              
+            } else {
+              alert('Error: ' + (result.error || 'Unknown error'));
+              location.reload();
+            }
+          } catch (error) {
+            console.error('Network error:', error);
+            alert('Network error. Please try again.');
+            location.reload();
+          }
         }
-      }, 300);
-      
-    } else {
-      alert('Error: ' + (result.error || 'Unknown error'));
-      location.reload();
-    }
-  } catch (error) {
-    console.error('Network error:', error);
-    alert('Network error. Please try again.');
-    location.reload();
-  }
-}
       </script>
     </body>
     </html>
