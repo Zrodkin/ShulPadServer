@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
           try {
             // Using ShulPad:// scheme to signal completion to the app
             // The path "oauth-complete" will be caught by the app
-            window.location.href = "ShulPad://oauth-complete?success=${success}${error ? '&error=' + encodeURIComponent(error) : ''}";
+            window.location.href = "shulPad://oauth-complete?success=${success}${error ? '&error=' + encodeURIComponent(error) : ''}";
             
             // If we're still here after 300ms, try window.close
             setTimeout(function() {
