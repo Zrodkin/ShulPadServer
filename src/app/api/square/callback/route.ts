@@ -199,8 +199,8 @@ export async function GET(request: NextRequest) {
         })
 
         // 🚀 OPTIMIZATION 7: Immediate redirect to success page with all parameters
-        return NextResponse.redirect(
-  `shulpad://oauth-complete?success=true&merchant_id=${merchant_id}&location_id=${singleLocation.id}&location_name=${encodeURIComponent(singleLocation.name)}`
+       return NextResponse.redirect(
+  `${request.nextUrl.origin}/api/square/success?success=true&merchant_id=${merchant_id}&location_id=${singleLocation.id}&location_name=${encodeURIComponent(singleLocation.name)}`
 )
 
 
