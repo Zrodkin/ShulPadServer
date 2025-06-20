@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Clean up old pending tokens
-      await db.execute("DELETE FROM square_pending_tokens WHERE created_at < NOW() - INTERVAL 1 HOUR")
+await db.execute("DELETE FROM square_pending_tokens WHERE created_at < NOW() - INTERVAL 24 HOUR")
       
       await db.execute("COMMIT")
       
