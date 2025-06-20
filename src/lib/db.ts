@@ -1,5 +1,6 @@
 // src/lib/db.ts - PlanetScale Version
 import { connect } from '@planetscale/database'
+import { initializeSubscriptionSchema } from './subscription-schema'
 
 let globalDb: any = null
 
@@ -132,4 +133,13 @@ export async function initializeDatabase() {
     console.error('❌ Error initializing database schema:', error)
     throw error
   }
+}
+
+
+export async function initializeAllSchemas() {
+  // Initialize your existing schema
+  await initializeDatabase()
+  
+  // Add subscription schema
+  await initializeSubscriptionSchema()
 }
