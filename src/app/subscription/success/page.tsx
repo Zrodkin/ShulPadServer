@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-export default function SuccessPage() {
+function SuccessPageContent() {
   const searchParams = useSearchParams()
   const orgId = searchParams.get('org_id') || 'default'
   const subscriptionId = searchParams.get('subscription_id')
@@ -50,5 +50,20 @@ export default function SuccessPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-green-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <SuccessPageContent />
+    </Suspense>
   )
 }
