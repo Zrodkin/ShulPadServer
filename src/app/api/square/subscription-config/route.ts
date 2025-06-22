@@ -3,12 +3,12 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
-    const applicationId = process.env.SQUARE_APPLICATION_ID
+    const applicationId = process.env.SQUARE_APP_ID
     const locationId = process.env.SHULPAD_SQUARE_LOCATION_ID
     
     // Validate required environment variables
     if (!applicationId) {
-      console.error('SQUARE_APPLICATION_ID not configured')
+      console.error('SQUARE_APP_ID not configured')
       return NextResponse.json({ 
         error: "Payment configuration incomplete: Missing application ID" 
       }, { status: 500 })
