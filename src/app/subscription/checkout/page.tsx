@@ -39,6 +39,13 @@ function CheckoutPageContent() {
   const [error, setError] = useState<string | null>(null)
   const [squareLoaded, setSquareLoaded] = useState(false)
   
+  // 🔒 SECURE: Square config state
+  const [squareConfig, setSquareConfig] = useState<{
+    application_id: string
+    location_id: string
+  } | null>(null)
+  const [configLoading, setConfigLoading] = useState(true)
+  
   // Refs
   const cardContainerRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<any>(null)
@@ -49,19 +56,52 @@ function CheckoutPageContent() {
   const extraDevicePrice = (deviceCount - 1) * PLAN_PRICING[selectedPlan].extra
   const totalPrice = basePrice + extraDevicePrice
   
-  // Initialize Square Web Payments SDK
+  // 🔒 SECURE: Fetch Square config from backend
   useEffect(() => {
-    if (!squareLoaded || !window.Square) return
+    async function fetchSquareConfig() {
+      try {
+        setConfigLoading(true)
+        const response = await fetch('/api/square/subscription-config')
+        
+        if (response.ok) {
+          const config = await response.json()
+          setSquareConfig(config)
+          console.log('✅ Loaded Square config securely')
+        } else {
+          const errorData = await response.json()
+          setError(`Failed to load payment configuration: ${errorData.error || 'Unknown error'}`)
+        }
+      } catch (err) {
+        console.error('Config fetch error:', err)
+        setError('Failed to load payment configuration. Please refresh the page.')
+      } finally {
+        setConfigLoading(false)
+      }
+    }
+    
+    fetchSquareConfig()
+  }, [])
+  
+  // 🔒 SECURE: Initialize Square with fetched config
+  useEffect(() => {
+    if (!squareLoaded || !window.Square || !squareConfig) return
     
     initializeSquare()
-  }, [squareLoaded])
+  }, [squareLoaded, squareConfig]) // ✅ Fixed: Added squareConfig dependency
   
   async function initializeSquare() {
+    if (!squareConfig) {
+      setError('Square configuration not loaded')
+      return
+    }
+    
     try {
-      // Initialize payments
+      console.log('🔄 Initializing Square payments...')
+      
+      // 🔒 SECURE: Use config from backend instead of hardcoded values
       const payments = window.Square.payments(
-        'sq0idp-kt-6g2MHFsJB4J8uT5P-Fw', // Your production Application ID
-        'LZ0K8NNRCBAHX' // You'll need to get the location ID from your backend
+        squareConfig.application_id,
+        squareConfig.location_id
       )
       paymentsRef.current = payments
       
@@ -92,6 +132,8 @@ function CheckoutPageContent() {
       
       await card.attach('#card-container')
       cardRef.current = card
+      
+      console.log('✅ Square payment form initialized')
       
     } catch (err) {
       console.error('Failed to initialize Square:', err)
@@ -176,6 +218,38 @@ function CheckoutPageContent() {
     } finally {
       setIsLoading(false)
     }
+  }
+  
+  // Show loading while config is being fetched
+  if (configLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading payment configuration...</p>
+        </div>
+      </div>
+    )
+  }
+  
+  // Show error if config failed to load
+  if (!squareConfig) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full text-center">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+            <h1 className="text-xl font-bold text-red-900 mb-2">Configuration Error</h1>
+            <p className="text-red-700 mb-4">{error || 'Failed to load payment configuration'}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
   
   return (
@@ -273,7 +347,14 @@ function CheckoutPageContent() {
             {/* Payment Details */}
             <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-lg font-semibold mb-4">Payment Details</h2>
-              <div id="card-container" ref={cardContainerRef} className="min-h-[100px]"></div>
+              <div id="card-container" ref={cardContainerRef} className="min-h-[100px]">
+                {!squareLoaded && (
+                  <div className="flex items-center justify-center h-24 text-gray-500">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
+                    Loading payment form...
+                  </div>
+                )}
+              </div>
             </div>
             
             {/* Promo Code */}
@@ -319,9 +400,9 @@ function CheckoutPageContent() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={isLoading || !squareLoaded}
+              disabled={isLoading || !squareLoaded || !squareConfig}
               className={`w-full py-3 px-4 rounded-lg font-medium text-white 
-                ${isLoading || !squareLoaded 
+                ${isLoading || !squareLoaded || !squareConfig
                   ? 'bg-gray-400 cursor-not-allowed' 
                   : 'bg-blue-600 hover:bg-blue-700'}`}
             >
