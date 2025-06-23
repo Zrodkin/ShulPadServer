@@ -91,7 +91,7 @@ function CheckoutPageContent() {
     initializeSquare()
   }, [squareLoaded, squareConfig])
   
- async function initializeSquare() {
+async function initializeSquare() {
   if (!squareConfig) {
     setError('Square configuration not loaded')
     return
@@ -106,10 +106,9 @@ function CheckoutPageContent() {
     )
     paymentsRef.current = payments
     
-    // ✅ CORRECT - Only use supported properties
+    // ✅ SIMPLIFIED - Remove problematic fontFamily
     const card = await payments.card({
       style: {
-        // Container styling (limited options)
         '.input-container': {
           borderColor: '#E0E0E0',
           borderWidth: '1px',
@@ -123,10 +122,10 @@ function CheckoutPageContent() {
           borderWidth: '2px',
         },
         
-        // Input field styling (more options available)
+        // Input field styling - simplified font
         'input': {
-          fontSize: '16px',           // ✅ Prevents iOS zoom
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontSize: '16px',           // Prevents iOS zoom
+          fontFamily: 'Arial',        // ✅ Simple font that Square accepts
           color: '#111827',
         },
         'input.is-focus': {
