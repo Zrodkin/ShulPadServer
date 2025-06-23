@@ -1,8 +1,10 @@
+// src/app/subscription/checkout/page.tsx - FIXED VERSION
 'use client'
 
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Script from 'next/script'
+import Head from 'next/head'
 
 declare global {
   interface Window {
@@ -87,7 +89,7 @@ function CheckoutPageContent() {
     if (!squareLoaded || !window.Square || !squareConfig) return
     
     initializeSquare()
-  }, [squareLoaded, squareConfig]) // ✅ Fixed: Added squareConfig dependency
+  }, [squareLoaded, squareConfig])
   
   async function initializeSquare() {
     if (!squareConfig) {
@@ -111,6 +113,8 @@ function CheckoutPageContent() {
           '.input-container': {
             borderColor: '#E0E0E0',
             borderRadius: '6px',
+            padding: '12px',
+            fontSize: '16px', // Prevent zoom on iOS
           },
           '.input-container.is-focus': {
             borderColor: '#006AFF',
@@ -191,6 +195,7 @@ function CheckoutPageContent() {
             device_count: deviceCount,
             customer_email: customerEmail,
             card_id: card_id,
+            customer_id: customer_id,
             promo_code: promoCode || null
           })
         })
@@ -223,44 +228,260 @@ function CheckoutPageContent() {
   // Show loading while config is being fetched
   if (configLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading payment configuration...</p>
+      <>
+        <Head>
+          <title>ShulPad Subscription - Loading</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+          <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+          
+        </Head>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              animation: 'spin 1s linear infinite',
+              borderRadius: '50%',
+              height: '48px',
+              width: '48px',
+              borderTop: '2px solid #2563eb',
+              borderRight: '2px solid transparent',
+              margin: '0 auto'
+            }}></div>
+            <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading payment configuration...</p>
+          </div>
         </div>
-      </div>
+        <style jsx>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </>
     )
   }
   
   // Show error if config failed to load
   if (!squareConfig) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <h1 className="text-xl font-bold text-red-900 mb-2">Configuration Error</h1>
-            <p className="text-red-700 mb-4">{error || 'Failed to load payment configuration'}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-            >
-              Retry
-            </button>
+      <>
+        <Head>
+          <title>ShulPad Subscription - Configuration Error</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+          <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+        </Head>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{ maxWidth: '448px', width: '100%', textAlign: 'center' }}>
+            <div style={{
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              padding: '24px'
+            }}>
+              <h1 style={{
+                fontSize: '20px',
+                fontWeight: 'bold',
+                color: '#7f1d1d',
+                marginBottom: '8px'
+              }}>Configuration Error</h1>
+              <p style={{
+                color: '#b91c1c',
+                marginBottom: '16px'
+              }}>{error || 'Failed to load payment configuration'}</p>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#dc2626',
+                  color: 'white',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Retry
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     )
   }
   
   return (
     <>
+      <Head>
+        <title>ShulPad Subscription</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="format-detection" content="telephone=no" />
+        <link rel="stylesheet" href="/safari-fallback.css" />
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            /* CSS Reset for Safari */
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+            }
+            
+            html, body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              line-height: 1.6;
+              -webkit-font-smoothing: antialiased;
+              -moz-osx-font-smoothing: grayscale;
+            }
+            
+            /* Tailwind-like utility classes for Safari compatibility */
+            .min-h-screen { min-height: 100vh; }
+            .bg-gray-50 { background-color: #f9fafb; }
+            .py-12 { padding-top: 48px; padding-bottom: 48px; }
+            .px-4 { padding-left: 16px; padding-right: 16px; }
+            .max-w-md { max-width: 448px; }
+            .mx-auto { margin-left: auto; margin-right: auto; }
+            .text-center { text-align: center; }
+            .mb-8 { margin-bottom: 32px; }
+            .text-3xl { font-size: 30px; }
+            .font-bold { font-weight: bold; }
+            .text-gray-900 { color: #111827; }
+            .mt-2 { margin-top: 8px; }
+            .text-gray-600 { color: #4b5563; }
+            .space-y-6 > * + * { margin-top: 24px; }
+            .bg-white { background-color: white; }
+            .p-6 { padding: 24px; }
+            .rounded-lg { border-radius: 8px; }
+            .shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+            .text-lg { font-size: 18px; }
+            .font-semibold { font-weight: 600; }
+            .mb-4 { margin-bottom: 16px; }
+            .space-y-3 > * + * { margin-top: 12px; }
+            .flex { display: flex; }
+            .items-center { align-items: center; }
+            .border { border: 1px solid #d1d5db; }
+            .cursor-pointer { cursor: pointer; }
+            .hover\\:bg-gray-50:hover { background-color: #f9fafb; }
+            .mr-3 { margin-right: 12px; }
+            .flex-1 { flex: 1 1 0%; }
+            .font-medium { font-weight: 500; }
+            .text-sm { font-size: 14px; }
+            .space-x-4 > * + * { margin-left: 16px; }
+            .px-3 { padding-left: 12px; padding-right: 12px; }
+            .py-1 { padding-top: 4px; padding-bottom: 4px; }
+            .hover\\:bg-gray-100:hover { background-color: #f3f4f6; }
+            .w-12 { width: 48px; }
+            .w-full { width: 100%; }
+            .py-2 { padding-top: 8px; padding-bottom: 8px; }
+            .focus\\:outline-none:focus { outline: none; }
+            .focus\\:ring-2:focus { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); }
+            .focus\\:ring-blue-500:focus { --ring-color: rgba(59, 130, 246, 0.5); }
+            .min-h-\\[100px\\] { min-height: 100px; }
+            .justify-center { justify-content: center; }
+            .h-24 { height: 96px; }
+            .text-gray-500 { color: #6b7280; }
+            .animate-spin { animation: spin 1s linear infinite; }
+            .rounded-full { border-radius: 9999px; }
+            .h-6 { height: 24px; }
+            .w-6 { width: 24px; }
+            .border-b-2 { border-bottom-width: 2px; }
+            .border-blue-600 { border-color: #2563eb; }
+            .mr-2 { margin-right: 8px; }
+            .bg-blue-50 { background-color: #eff6ff; }
+            .mb-2 { margin-bottom: 8px; }
+            .space-y-1 > * + * { margin-top: 4px; }
+            .justify-between { justify-content: space-between; }
+            .border-t { border-top: 1px solid #d1d5db; }
+            .pt-2 { padding-top: 8px; }
+            .mt-2 { margin-top: 8px; }
+            .bg-red-50 { background-color: #fef2f2; }
+            .border-red-200 { border-color: #fecaca; }
+            .text-red-700 { color: #b91c1c; }
+            .py-3 { padding-top: 12px; padding-bottom: 12px; }
+            .px-4 { padding-left: 16px; padding-right: 16px; }
+            .text-white { color: white; }
+            .bg-gray-400 { background-color: #9ca3af; }
+            .cursor-not-allowed { cursor: not-allowed; }
+            .bg-blue-600 { background-color: #2563eb; }
+            .hover\\:bg-blue-700:hover { background-color: #1d4ed8; }
+            .text-blue-600 { color: #2563eb; }
+            .hover\\:text-blue-800:hover { color: #1e40af; }
+            
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            
+            /* Form input styling for Safari */
+            input[type="email"], input[type="text"], input[type="radio"] {
+              -webkit-appearance: none;
+              appearance: none;
+              border: 1px solid #d1d5db;
+              border-radius: 6px;
+              padding: 8px 12px;
+              font-size: 16px; /* Prevent zoom on iOS Safari */
+              background-color: white;
+            }
+            
+            input[type="radio"] {
+              width: 16px;
+              height: 16px;
+              border-radius: 50%;
+              padding: 0;
+              position: relative;
+            }
+            
+            input[type="radio"]:checked {
+              background-color: #2563eb;
+              border-color: #2563eb;
+            }
+            
+            input[type="radio"]:checked::after {
+              content: '';
+              position: absolute;
+              top: 2px;
+              left: 2px;
+              width: 8px;
+              height: 8px;
+              border-radius: 50%;
+              background-color: white;
+            }
+            
+            button {
+              border: none;
+              border-radius: 6px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: background-color 0.2s;
+            }
+            
+            /* Square payment form container */
+            #card-container {
+              border: 1px solid #d1d5db;
+              border-radius: 6px;
+              padding: 16px;
+              background-color: white;
+            }
+          `
+        }} />
+      </Head>
+      
       <Script 
         src="https://web.squarecdn.com/v1/square.js"
         onLoad={() => setSquareLoaded(true)}
         strategy="afterInteractive"
       />
       
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gray-50 py-12 px-4">
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900">ShulPad Subscription</h1>
@@ -428,10 +649,24 @@ function CheckoutPageContent() {
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading checkout...</p>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#f9fafb',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            animation: 'spin 1s linear infinite',
+            borderRadius: '50%',
+            height: '48px',
+            width: '48px',
+            borderTop: '2px solid #2563eb',
+            borderRight: '2px solid transparent',
+            margin: '0 auto'
+          }}></div>
+          <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading checkout...</p>
         </div>
       </div>
     }>

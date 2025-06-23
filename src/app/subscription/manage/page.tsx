@@ -1,7 +1,9 @@
+// src/app/subscription/manage/page.tsx - FIXED VERSION
 'use client'
 
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import Head from 'next/head'
 
 interface SubscriptionDetails {
   id: string
@@ -65,135 +67,327 @@ function ManagePageContent() {
   
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading subscription details...</p>
+      <>
+        <Head>
+          <title>ShulPad Subscription - Loading</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+          <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+          <link rel="stylesheet" href="/safari-fallback.css" />
+        </Head>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              animation: 'spin 1s linear infinite',
+              borderRadius: '50%',
+              height: '48px',
+              width: '48px',
+              borderTop: '2px solid #2563eb',
+              borderRight: '2px solid transparent',
+              margin: '0 auto'
+            }}></div>
+            <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading subscription details...</p>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
   
   if (error || !subscription) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">No Active Subscription</h1>
-          <p className="text-gray-600 mb-8">{error || 'You don\'t have an active subscription.'}</p>
-          <a
-            href={`/subscription/checkout?org_id=${orgId}`}
-            className="inline-block py-3 px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-          >
-            Subscribe Now
-          </a>
+      <>
+        <Head>
+          <title>ShulPad Subscription - No Active Subscription</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+          <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+          <link rel="stylesheet" href="/safari-fallback.css" />
+        </Head>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{ maxWidth: '448px', width: '100%', textAlign: 'center' }}>
+            <h1 style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: '#111827',
+              marginBottom: '16px'
+            }}>No Active Subscription</h1>
+            <p style={{
+              color: '#6b7280',
+              marginBottom: '32px'
+            }}>{error || 'You don\'t have an active subscription.'}</p>
+            <a
+              href={`/subscription/checkout?org_id=${orgId}`}
+              style={{
+                display: 'inline-block',
+                padding: '12px 24px',
+                backgroundColor: '#2563eb',
+                color: 'white',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontWeight: '500'
+              }}
+            >
+              Subscribe Now
+            </a>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
   
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-md mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-          Manage Subscription
-        </h1>
-        
-        <div className="bg-white rounded-lg shadow divide-y">
-          {/* Subscription Status */}
-          <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Subscription Details</h2>
-            <dl className="space-y-3">
-              <div className="flex justify-between">
-                <dt className="text-gray-600">Status</dt>
-                <dd className="font-medium">
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    subscription.status === 'active' 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    {subscription.status.toUpperCase()}
-                  </span>
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">Plan</dt>
-                <dd className="font-medium capitalize">{subscription.plan_type}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">Devices</dt>
-                <dd className="font-medium">{subscription.device_count}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">Price</dt>
-                <dd className="font-medium">
-                  ${subscription.total_price}/{subscription.plan_type === 'monthly' ? 'month' : 'year'}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">Next Billing</dt>
-                <dd className="font-medium">
-                  {new Date(subscription.next_billing_date).toLocaleDateString()}
-                </dd>
-              </div>
-            </dl>
-          </div>
+    <>
+      <Head>
+        <title>ShulPad Subscription - Manage</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="format-detection" content="telephone=no" />
+        <link rel="stylesheet" href="/safari-fallback.css" />
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            .status-badge {
+              padding: 4px 8px;
+              border-radius: 9999px;
+              font-size: 12px;
+              font-weight: 600;
+              text-transform: uppercase;
+            }
+            .status-active {
+              background-color: #dcfce7;
+              color: #166534;
+            }
+            .status-inactive {
+              background-color: #f3f4f6;
+              color: #374151;
+            }
+            .detail-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 8px 0;
+              border-bottom: 1px solid #f3f4f6;
+            }
+            .detail-row:last-child {
+              border-bottom: none;
+            }
+            .detail-label {
+              color: #6b7280;
+            }
+            .detail-value {
+              font-weight: 500;
+            }
+            .payment-method {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+            }
+            .card-icon {
+              width: 48px;
+              height: 32px;
+              background-color: #f3f4f6;
+              border-radius: 4px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 12px;
+              font-family: monospace;
+              margin-right: 12px;
+            }
+            .btn-secondary {
+              background-color: white;
+              color: #dc2626;
+              border: 1px solid #dc2626;
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 16px;
+              font-weight: 500;
+              width: 100%;
+              margin-top: 12px;
+            }
+            .btn-secondary:hover {
+              background-color: #fef2f2;
+            }
+            .actions-section {
+              padding: 24px;
+              border-top: 1px solid #e5e7eb;
+            }
+          `
+        }} />
+      </Head>
+      
+      <div className="min-h-screen" style={{
+        minHeight: '100vh',
+        backgroundColor: '#f9fafb',
+        padding: '48px 16px'
+      }}>
+        <div style={{ maxWidth: '448px', margin: '0 auto' }}>
+          <h1 style={{
+            fontSize: '30px',
+            fontWeight: 'bold',
+            color: '#111827',
+            marginBottom: '32px',
+            textAlign: 'center'
+          }}>
+            Manage Subscription
+          </h1>
           
-          {/* Payment Method */}
-          <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Payment Method</h2>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-8 bg-gray-200 rounded flex items-center justify-center text-xs font-mono">
-                  ****
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+            overflow: 'hidden'
+          }}>
+            {/* Subscription Status */}
+            <div style={{ padding: '24px' }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                marginBottom: '16px'
+              }}>Subscription Details</h2>
+              
+              <div>
+                <div className="detail-row">
+                  <span className="detail-label">Status</span>
+                  <span className={`status-badge ${subscription.status === 'active' ? 'status-active' : 'status-inactive'}`}>
+                    {subscription.status}
+                  </span>
                 </div>
-                <span className="text-gray-600">
-                  Card ending in {subscription.card_last_four}
-                </span>
+                <div className="detail-row">
+                  <span className="detail-label">Plan</span>
+                  <span className="detail-value" style={{ textTransform: 'capitalize' }}>
+                    {subscription.plan_type}
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Devices</span>
+                  <span className="detail-value">{subscription.device_count}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Price</span>
+                  <span className="detail-value">
+                    ${subscription.total_price}/{subscription.plan_type === 'monthly' ? 'month' : 'year'}
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Next Billing</span>
+                  <span className="detail-value">
+                    {new Date(subscription.next_billing_date).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
-              <button className="text-blue-600 hover:text-blue-800 text-sm">
-                Update
+            </div>
+            
+            {/* Payment Method */}
+            <div style={{
+              padding: '24px',
+              borderTop: '1px solid #e5e7eb'
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                marginBottom: '16px'
+              }}>Payment Method</h2>
+              <div className="payment-method">
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div className="card-icon">****</div>
+                  <span style={{ color: '#6b7280' }}>
+                    Card ending in {subscription.card_last_four}
+                  </span>
+                </div>
+                <button style={{
+                  color: '#2563eb',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}>
+                  Update
+                </button>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="actions-section">
+              <button
+                onClick={() => router.push(`/subscription/checkout?org_id=${orgId}&plan=${subscription.plan_type}&devices=${subscription.device_count}`)}
+                className="btn btn-primary"
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  backgroundColor: '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '16px',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Change Plan
+              </button>
+              <button
+                onClick={handleCancelSubscription}
+                className="btn-secondary"
+              >
+                Cancel Subscription
               </button>
             </div>
           </div>
           
-          {/* Actions */}
-          <div className="p-6 space-y-3">
-            <button
-              onClick={() => router.push(`/subscription/checkout?org_id=${orgId}&plan=${subscription.plan_type}&devices=${subscription.device_count}`)}
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+          {/* Return to App */}
+          <div style={{
+            marginTop: '32px',
+            textAlign: 'center'
+          }}>
+            <a
+              href={`shulpad://subscription/manage?org_id=${orgId}`}
+              style={{
+                color: '#2563eb',
+                textDecoration: 'underline'
+              }}
             >
-              Change Plan
-            </button>
-            <button
-              onClick={handleCancelSubscription}
-              className="w-full py-2 px-4 border border-red-600 text-red-600 rounded-lg hover:bg-red-50 font-medium"
-            >
-              Cancel Subscription
-            </button>
+              Return to ShulPad
+            </a>
           </div>
         </div>
-        
-        {/* Return to App */}
-        <div className="mt-8 text-center">
-          <a
-            href={`shulpad://subscription/manage?org_id=${orgId}`}
-            className="text-blue-600 hover:text-blue-800"
-          >
-            Return to ShulPad
-          </a>
-        </div>
       </div>
-    </div>
+    </>
   )
 }
 
 export default function ManagePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#f9fafb',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            animation: 'spin 1s linear infinite',
+            borderRadius: '50%',
+            height: '48px',
+            width: '48px',
+            borderTop: '2px solid #2563eb',
+            borderRight: '2px solid transparent',
+            margin: '0 auto'
+          }}></div>
+          <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading...</p>
         </div>
       </div>
     }>
