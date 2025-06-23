@@ -56,7 +56,7 @@ function CheckoutPageContent() {
   // Calculate pricing
   const basePrice = PLAN_PRICING[selectedPlan].base
   const extraDevicePrice = (deviceCount - 1) * PLAN_PRICING[selectedPlan].extra
-  const totalPrice = basePrice + extraDevicePrice
+ const totalPrice = 1 // ✅ TEMPORARY: $1 for testing
   
   // 🔒 SECURE: Fetch Square config from backend
   useEffect(() => {
@@ -147,12 +147,11 @@ async function handleSubmit(e: React.FormEvent) {
     
     // Create verification details for tokenization
     const verificationDetails = {
-      amount: (totalPrice * 100).toString(), // Convert to cents
       billingContact: {
         email: customerEmail
       },
-      currencyCode: 'USD',
-      intent: 'STORE', // We want to store the card for subscription
+     
+      intent: 'CHARGE', // We want to charge the card for subscription
       customerInitiated: true,
       sellerKeyedIn: false
     }
