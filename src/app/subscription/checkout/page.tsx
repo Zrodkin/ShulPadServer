@@ -91,59 +91,74 @@ function CheckoutPageContent() {
     initializeSquare()
   }, [squareLoaded, squareConfig])
   
-  async function initializeSquare() {
-    if (!squareConfig) {
-      setError('Square configuration not loaded')
-      return
-    }
-    
-    try {
-      console.log('🔄 Initializing Square payments...')
-      
-      // 🔒 SECURE: Use config from backend instead of hardcoded values
-      const payments = window.Square.payments(
-        squareConfig.application_id,
-        squareConfig.location_id
-      )
-      paymentsRef.current = payments
-      
-      // Initialize card payment method
-      const card = await payments.card({
-        style: {
-          '.input-container': {
-            borderColor: '#E0E0E0',
-            borderRadius: '6px',
-            padding: '12px',
-            fontSize: '16px', // Prevent zoom on iOS
-          },
-          '.input-container.is-focus': {
-            borderColor: '#006AFF',
-          },
-          '.message-text': {
-            color: '#999999',
-          },
-          '.message-icon': {
-            color: '#999999',
-          },
-          '.message-text.is-error': {
-            color: '#FF5252',
-          },
-          '.message-icon.is-error': {
-            color: '#FF5252',
-          },
-        }
-      })
-      
-      await card.attach('#card-container')
-      cardRef.current = card
-      
-      console.log('✅ Square payment form initialized')
-      
-    } catch (err) {
-      console.error('Failed to initialize Square:', err)
-      setError('Failed to load payment form. Please refresh the page.')
-    }
+ async function initializeSquare() {
+  if (!squareConfig) {
+    setError('Square configuration not loaded')
+    return
   }
+  
+  try {
+    console.log('🔄 Initializing Square payments...')
+    
+    const payments = window.Square.payments(
+      squareConfig.application_id,
+      squareConfig.location_id
+    )
+    paymentsRef.current = payments
+    
+    // ✅ CORRECT - Only use supported properties
+    const card = await payments.card({
+      style: {
+        // Container styling (limited options)
+        '.input-container': {
+          borderColor: '#E0E0E0',
+          borderWidth: '1px',
+        },
+        '.input-container.is-focus': {
+          borderColor: '#006AFF',
+          borderWidth: '2px',
+        },
+        '.input-container.is-error': {
+          borderColor: '#FF5252',
+          borderWidth: '2px',
+        },
+        
+        // Input field styling (more options available)
+        'input': {
+          fontSize: '16px',           // ✅ Prevents iOS zoom
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          color: '#111827',
+        },
+        'input.is-focus': {
+          fontSize: '16px',
+        },
+        
+        // Message styling
+        '.message-text': {
+          color: '#6b7280',
+        },
+        '.message-text.is-error': {
+          color: '#FF5252',
+        },
+        '.message-icon': {
+          color: '#6b7280',
+        },
+        '.message-icon.is-error': {
+          color: '#FF5252',
+        },
+      }
+    })
+    
+    await card.attach('#card-container')
+    cardRef.current = card
+    
+    console.log('✅ Square payment form initialized')
+    
+  } catch (err) {
+    console.error('Failed to initialize Square:', err)
+    setError('Failed to load payment form. Please refresh the page.')
+  }
+}
   
 async function handleSubmit(e: React.FormEvent) {
   e.preventDefault()
