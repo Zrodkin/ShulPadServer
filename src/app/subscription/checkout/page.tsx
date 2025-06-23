@@ -145,85 +145,85 @@ function CheckoutPageContent() {
     }
   }
   
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+async function handleSubmit(e: React.FormEvent) {
+  e.preventDefault()
+  
+  if (!cardRef.current) {
+    setError('Payment form not initialized')
+    return
+  }
+  
+  if (!customerEmail) {
+    setError('Please enter your email address')
+    return
+  }
+  
+  setIsLoading(true)
+  setError(null)
+  
+  try {
+    console.log('🔄 Starting tokenization...')
     
-    if (!cardRef.current) {
-      setError('Payment form not initialized')
-      return
+    // Create verification details for tokenization
+    const verificationDetails = {
+      amount: (totalPrice * 100).toString(), // Convert to cents
+      billingContact: {
+        email: customerEmail
+      },
+      currencyCode: 'USD',
+      intent: 'STORE', // We want to store the card for subscription
+      customerInitiated: true,
+      sellerKeyedIn: false
     }
     
-    if (!customerEmail) {
-      setError('Please enter your email address')
-      return
-    }
+    // Step 1: Tokenize the card
+    const tokenResult = await cardRef.current.tokenize(verificationDetails)
     
-    setIsLoading(true)
-    setError(null)
-    
-    try {
-      // Step 1: Tokenize the card
-      const result = await cardRef.current.tokenize()
+    if (tokenResult.status === 'OK') {
+      const { token } = tokenResult
+      console.log('✅ Card tokenized successfully')
       
-      if (result.status === 'OK') {
-        const { token } = result
-        
-        // Step 2: Create payment method in Square
-        const paymentMethodResponse = await fetch('/api/subscription/create-payment-method', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            source_id: token,
-            organization_id: orgId,
-            customer_email: customerEmail
-          })
+      // Step 2: Create subscription with your existing backend
+      // Your backend will handle customer creation, card storage, and subscription creation
+      const subscriptionResponse = await fetch('/api/subscriptions/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organization_id: orgId,
+          plan_type: selectedPlan,
+          device_count: deviceCount,
+          customer_email: customerEmail,
+          source_id: token, // Send the token - your backend will handle the rest
+          promo_code: promoCode || null
         })
-        
-        if (!paymentMethodResponse.ok) {
-          throw new Error('Failed to save payment method')
-        }
-        
-        const { card_id, customer_id } = await paymentMethodResponse.json()
-        
-        // Step 3: Create subscription
-        const subscriptionResponse = await fetch('/api/subscriptions/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            organization_id: orgId,
-            plan_type: selectedPlan,
-            device_count: deviceCount,
-            customer_email: customerEmail,
-            card_id: card_id,
-            customer_id: customer_id,
-            promo_code: promoCode || null
-          })
-        })
-        
-        if (!subscriptionResponse.ok) {
-          const errorData = await subscriptionResponse.json()
-          throw new Error(errorData.error || 'Failed to create subscription')
-        }
-        
-        const { subscription } = await subscriptionResponse.json()
-        
-        // Step 4: Redirect to success page
-        router.push(`/subscription/success?org_id=${orgId}&subscription_id=${subscription.id}`)
-        
-      } else {
-        // Handle tokenization errors
-        const errors = result.errors || []
-        const errorMessage = errors.map((e: any) => e.message).join(', ')
-        setError(errorMessage || 'Failed to process payment')
+      })
+      
+      if (!subscriptionResponse.ok) {
+        const errorData = await subscriptionResponse.json()
+        throw new Error(errorData.error || 'Failed to create subscription')
       }
       
-    } catch (err: any) {
-      console.error('Checkout error:', err)
-      setError(err.message || 'An error occurred during checkout')
-    } finally {
-      setIsLoading(false)
+      const { subscription } = await subscriptionResponse.json()
+      console.log('✅ Subscription created:', subscription.id)
+      
+      // Step 3: Redirect to success page
+      router.push(`/subscription/success?org_id=${orgId}&subscription_id=${subscription.id}`)
+      
+    } else {
+      // Handle tokenization errors
+      const errors = tokenResult.errors || []
+      const errorMessage = errors.map((e: any) => e.message).join(', ')
+      setError(errorMessage || 'Failed to process payment information')
+      console.error('Tokenization failed:', tokenResult)
     }
+    
+  } catch (err: any) {
+    console.error('Checkout error:', err)
+    setError(err.message || 'An error occurred during checkout')
+  } finally {
+    setIsLoading(false)
   }
+}
   
   // Show loading while config is being fetched
   if (configLoading) {

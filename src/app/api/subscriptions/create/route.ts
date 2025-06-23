@@ -1,7 +1,4 @@
-// ==========================================
-// FIXED CREATE SUBSCRIPTION ENDPOINT  
-// app/api/subscriptions/create/route.ts
-// ==========================================
+// Update your /api/subscriptions/create/route.ts to handle source_id:
 
 import { NextResponse, type NextRequest } from "next/server"
 import axios from "axios"
@@ -15,13 +12,12 @@ export async function POST(request: NextRequest) {
       plan_type, // 'monthly' or 'yearly'
       device_count = 1,
       customer_email,
-      card_id,
-      customer_id,
+      source_id, // 🆕 NEW: Token from Square Web Payments SDK
       promo_code = null
     } = body
 
     // Validate input
-    if (!organization_id || !plan_type || !customer_email || !card_id || !customer_id) {
+    if (!organization_id || !plan_type || !customer_email || !source_id) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
@@ -38,24 +34,22 @@ export async function POST(request: NextRequest) {
     }
 
     const { access_token, location_id } = connectionResult.rows[0]
-// Validate plan_type
-if (plan_type !== 'monthly' && plan_type !== 'yearly') {
-  return NextResponse.json({ error: "Invalid plan_type. Must be 'monthly' or 'yearly'" }, { status: 400 })
-}
 
-// Cast type for TypeScript
-const typedPlanType = plan_type as 'monthly' | 'yearly'
+    // Validate plan_type
+    if (plan_type !== 'monthly' && plan_type !== 'yearly') {
+      return NextResponse.json({ error: "Invalid plan_type. Must be 'monthly' or 'yearly'" }, { status: 400 })
+    }
 
-// Calculate pricing
-const pricing = {
-  monthly: { base: 4900, extra: 1500 }, // $49 + $15/device
-  yearly: { base: 49000, extra: 15000 }  // $490 + $150/device  
-}
+    const typedPlanType = plan_type as 'monthly' | 'yearly'
 
-const basePriceCents = pricing[typedPlanType].base
-const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
+    // Calculate pricing
+    const pricing = {
+      monthly: { base: 4900, extra: 1500 }, // $49 + $15/device
+      yearly: { base: 49000, extra: 15000 }  // $490 + $150/device  
+    }
 
-
+    const basePriceCents = pricing[typedPlanType].base
+    const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
     const totalPrice = basePriceCents + extraDeviceCost
 
     // Apply promo code if provided
@@ -69,7 +63,7 @@ const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
       )
 
       if (promoResult.rows.length > 0) {
-        const promo = promoResult.rows[0]
+        const promo = promoResult.rows[0] as any
         if (promo.discount_type === 'percentage') {
           promoDiscount = Math.round(totalPrice * (promo.discount_value / 100))
         } else {
@@ -83,14 +77,59 @@ const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
-    // Create Square subscription using CUSTOM PHASES (no plan needed!)
+    console.log(`🔄 Creating subscription for ${customer_email}`)
+
+    // 🆕 Step 1: Create customer in Square
+    console.log("📝 Creating Square customer...")
+    const customerResponse = await axios.post(
+      `https://connect.${SQUARE_DOMAIN}/v2/customers`,
+      {
+        given_name: customer_email.split('@')[0], // Use email prefix as name
+        email_address: customer_email
+      },
+      {
+        headers: {
+          "Square-Version": "2025-06-18",
+          "Authorization": `Bearer ${access_token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    )
+
+    const customerId = customerResponse.data.customer.id
+    console.log(`✅ Customer created: ${customerId}`)
+
+    // 🆕 Step 2: Create card on file using the payment token
+    console.log("💳 Creating card on file...")
+    const cardResponse = await axios.post(
+      `https://connect.${SQUARE_DOMAIN}/v2/cards`,
+      {
+        source_id: source_id, // 🆕 Use the token from frontend
+        card: {
+          customer_id: customerId
+        }
+      },
+      {
+        headers: {
+          "Square-Version": "2025-06-18",
+          "Authorization": `Bearer ${access_token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    )
+
+    const cardId = cardResponse.data.card.id
+    console.log(`✅ Card stored: ${cardId}`)
+
+    // 🆕 Step 3: Create Square subscription using CUSTOM PHASES
+    console.log("📅 Creating Square subscription...")
     const subscriptionResponse = await axios.post(
       `https://connect.${SQUARE_DOMAIN}/v2/subscriptions`,
       {
         idempotency_key: `sub_${organization_id}_${Date.now()}`,
         location_id: location_id,
-        customer_id: customer_id,
-        card_id: card_id,
+        customer_id: customerId,
+        card_id: cardId,
         start_date: new Date().toISOString().split('T')[0], // Today
         phases: [{
           ordinal: 0,
@@ -117,6 +156,7 @@ const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
     )
 
     const subscription = subscriptionResponse.data.subscription
+    console.log(`✅ Square subscription created: ${subscription.id}`)
 
     // Store subscription in database
     await db.execute(`
@@ -162,6 +202,8 @@ const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
       ON DUPLICATE KEY UPDATE last_active = NOW(), status = 'active'
     `, [organization_id, 'primary', 'Primary Device'])
 
+    console.log(`✅ Subscription stored in database`)
+
     return NextResponse.json({
       success: true,
       subscription: {
@@ -175,12 +217,13 @@ const extraDeviceCost = (device_count - 1) * pricing[typedPlanType].extra
     })
 
   } catch (error: any) {
-    console.error("Error creating subscription:", error)
+    console.error("❌ Subscription creation failed:", error)
     
     if (error.response?.data?.errors) {
       const squareErrors = error.response.data.errors
+      const errorMessage = squareErrors.map((e: any) => e.detail || e.code).join(', ')
       return NextResponse.json({ 
-        error: squareErrors[0]?.detail || "Square API error",
+        error: `Square API error: ${errorMessage}`,
         square_errors: squareErrors
       }, { status: 400 })
     }
