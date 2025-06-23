@@ -106,45 +106,12 @@ async function initializeSquare() {
     )
     paymentsRef.current = payments
     
-    // ✅ SIMPLIFIED - Remove problematic fontFamily
+    // ✅ MINIMAL - Only fix iOS zoom, use Square defaults for everything else
     const card = await payments.card({
       style: {
-        '.input-container': {
-          borderColor: '#E0E0E0',
-          borderWidth: '1px',
-        },
-        '.input-container.is-focus': {
-          borderColor: '#006AFF',
-          borderWidth: '2px',
-        },
-        '.input-container.is-error': {
-          borderColor: '#FF5252',
-          borderWidth: '2px',
-        },
-        
-        // Input field styling - simplified font
         'input': {
-          fontSize: '16px',           // Prevents iOS zoom
-          fontFamily: 'Arial',        // ✅ Simple font that Square accepts
-          color: '#111827',
-        },
-        'input.is-focus': {
-          fontSize: '16px',
-        },
-        
-        // Message styling
-        '.message-text': {
-          color: '#6b7280',
-        },
-        '.message-text.is-error': {
-          color: '#FF5252',
-        },
-        '.message-icon': {
-          color: '#6b7280',
-        },
-        '.message-icon.is-error': {
-          color: '#FF5252',
-        },
+          fontSize: '16px'  // Only this to prevent iOS zoom
+        }
       }
     })
     
