@@ -8,13 +8,13 @@
     "start": "next start",
     "lint": "next lint",
     "init-db": "node scripts/init-db.mjs",
-    "migrate:preset-donations": "npx ts-node --project tsconfig.scripts.json scripts/migrate-preset-donations.ts",
-    "migrate:all": "npm run init-db && npm run migrate:preset-donations"
+    "setup:subscriptions": "tsx scripts/setup-subscriptions.ts",
+    "migrate:subscriptions": "tsx scripts/setup-subscriptions.ts"
   },
   "dependencies": {
     "@planetscale/database": "^1.19.0",
     "@sendgrid/mail": "^8.1.5",
-    "axios": "^1.9.0",
+    "axios": "^1.10.0",
     "dotenv": "^16.5.0",
     "jspdf": "^3.0.1",
     "mysql2": "^3.14.1",
@@ -33,6 +33,7 @@
     "eslint-config-next": "15.3.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.20.3",
     "typescript": "^5"
   }
 }
