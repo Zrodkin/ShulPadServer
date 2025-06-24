@@ -18,7 +18,7 @@ interface SubscriptionDetails {
 function ManagePageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const orgId = searchParams.get('org_id') || 'default'
+  const merchantId = searchParams.get('merchant_id') || 'default'
   
   const [subscription, setSubscription] = useState<SubscriptionDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -26,11 +26,11 @@ function ManagePageContent() {
   
   useEffect(() => {
     fetchSubscriptionDetails()
-  }, [orgId])
+  }, [merchantId])
   
   async function fetchSubscriptionDetails() {
     try {
-      const response = await fetch(`/api/subscriptions/status?organization_id=${orgId}`)
+      const response = await fetch(`/api/subscriptions/status?organization_id=${merchantId}`)
       if (!response.ok) throw new Error('Failed to fetch subscription')
       
       const data = await response.json()
@@ -53,13 +53,13 @@ function ManagePageContent() {
       const response = await fetch('/api/subscriptions/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organization_id: orgId })
+        body: JSON.stringify({ organization_id: merchantId })
       })
       
       if (!response.ok) throw new Error('Failed to cancel subscription')
       
       alert('Subscription cancelled successfully')
-      router.push(`shulpad://subscription/cancelled?org_id=${orgId}`)
+      router.push(`shulpad://subscription/cancelled?org_id=${merchantId}`)
     } catch (err) {
       alert('Failed to cancel subscription')
     }
@@ -127,7 +127,7 @@ function ManagePageContent() {
               marginBottom: '32px'
             }}>{error || 'You don\'t have an active subscription.'}</p>
             <a
-              href={`/subscription/checkout?org_id=${orgId}`}
+              href={`/subscription/checkout?org_id=${merchantId}`}
               style={{
                 display: 'inline-block',
                 padding: '12px 24px',
@@ -321,7 +321,7 @@ function ManagePageContent() {
             {/* Actions */}
             <div className="actions-section">
               <button
-                onClick={() => router.push(`/subscription/checkout?org_id=${orgId}&plan=${subscription.plan_type}&devices=${subscription.device_count}`)}
+                onClick={() => router.push(`/subscription/checkout?org_id=${merchantId}&plan=${subscription.plan_type}&devices=${subscription.device_count}`)}
                 className="btn btn-primary"
                 style={{
                   width: '100%',
@@ -352,7 +352,7 @@ function ManagePageContent() {
             textAlign: 'center'
           }}>
             <a
-              href={`shulpad://subscription/manage?org_id=${orgId}`}
+              href={`shulpad://subscription/manage?org_id=${merchantId}`}
               style={{
                 color: '#2563eb',
                 textDecoration: 'underline'

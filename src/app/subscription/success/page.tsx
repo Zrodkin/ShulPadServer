@@ -5,17 +5,17 @@ import { useSearchParams } from 'next/navigation'
 
 function SuccessPageContent() {
   const searchParams = useSearchParams()
-  const orgId = searchParams.get('org_id') || 'default'
+  const merchantId = searchParams.get('merchant_id') || 'default'
   const subscriptionId = searchParams.get('subscription_id')
   
   useEffect(() => {
     // Auto-redirect to app after 3 seconds
     const timer = setTimeout(() => {
-      window.location.href = `shulpad://subscription/success?org_id=${orgId}&subscription_id=${subscriptionId}`
+window.location.href = `shulpad://subscription/success?merchant_id=${merchantId}&subscription_id=${subscriptionId}`
     }, 3000)
     
     return () => clearTimeout(timer)
-  }, [orgId, subscriptionId])
+  }, [merchantId, subscriptionId])
   
   return (
     <div className="min-h-screen bg-green-50 flex items-center justify-center px-4">
@@ -38,7 +38,7 @@ function SuccessPageContent() {
         
         <div className="space-y-4">
           <a
-            href={`shulpad://subscription/success?org_id=${orgId}&subscription_id=${subscriptionId}`}
+            href={`shulpad://subscription/success?org_id=${merchantId}&subscription_id=${subscriptionId}`}
             className="block w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
           >
             Return to ShulPad
