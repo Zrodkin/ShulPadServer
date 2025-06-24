@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import Script from 'next/script'
 import Head from 'next/head'
 
+
 declare global {
   interface Window {
     Square: any
@@ -27,7 +28,7 @@ function CheckoutPageContent() {
   const router = useRouter()
   
   // URL parameters
-  const orgId = searchParams.get('org_id') || 'default'
+const merchantId = searchParams.get('merchant_id')
   const initialPlan = searchParams.get('plan') || 'monthly'
   const initialDevices = parseInt(searchParams.get('devices') || '1')
   const email = searchParams.get('email') || ''
@@ -41,12 +42,16 @@ function CheckoutPageContent() {
   const [error, setError] = useState<string | null>(null)
   const [squareLoaded, setSquareLoaded] = useState(false)
   
+  
   // 🔒 SECURE: Square config state
   const [squareConfig, setSquareConfig] = useState<{
     application_id: string
     location_id: string
   } | null>(null)
   const [configLoading, setConfigLoading] = useState(true)
+  // Add these state variables
+const [merchantEmail, setMerchantEmail] = useState('')
+const [emailSource, setEmailSource] = useState('')
   
   // Refs
   const cardContainerRef = useRef<HTMLDivElement>(null)
@@ -90,6 +95,25 @@ function CheckoutPageContent() {
     
     initializeSquare()
   }, [squareLoaded, squareConfig])
+
+  // Add this useEffect after your existing ones
+useEffect(() => {
+  if (!merchantId) return
+
+fetch(`/api/subscriptions/merchant-email?merchant_id=${merchantId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.merchant_email) {
+        setMerchantEmail(data.merchant_email)
+        setCustomerEmail(data.merchant_email) // Auto-fill
+        setEmailSource('merchant')
+        console.log("📧 Auto-filled merchant email:", data.merchant_email)
+      }
+    })
+    .catch(error => {
+      console.warn("Could not fetch merchant email:", error)
+    })
+}, [merchantId])
   
 async function initializeSquare() {
   if (!squareConfig) {
@@ -134,10 +158,10 @@ async function handleSubmit(e: React.FormEvent) {
     return
   }
   
-  if (!customerEmail) {
-    setError('Please enter your email address')
-    return
-  }
+ if (!customerEmail && !merchantEmail) {
+  setError('Email address is required')
+  return
+}
   
   setIsLoading(true)
   setError(null)
@@ -146,15 +170,16 @@ async function handleSubmit(e: React.FormEvent) {
     console.log('🔄 Starting tokenization...')
     
     // Create verification details for tokenization
-    const verificationDetails = {
-      billingContact: {
-        email: customerEmail
-      },
-     
-      intent: 'CHARGE', // We want to charge the card for subscription
-      customerInitiated: true,
-      sellerKeyedIn: false
-    }
+   const verificationDetails = {
+  amount: '1.00', // ✅ ADD this line
+  currencyCode: 'USD', // ✅ ADD this line  
+  billingContact: {
+    email: customerEmail
+  },
+  intent: 'CHARGE',
+  customerInitiated: true,
+  sellerKeyedIn: false
+}
     
     // Step 1: Tokenize the card
     const tokenResult = await cardRef.current.tokenize(verificationDetails)
@@ -168,14 +193,14 @@ async function handleSubmit(e: React.FormEvent) {
       const subscriptionResponse = await fetch('/api/subscriptions/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          organization_id: orgId,
-          plan_type: selectedPlan,
-          device_count: deviceCount,
-          customer_email: customerEmail,
-          source_id: token, // Send the token - your backend will handle the rest
-          promo_code: promoCode || null
-        })
+       body: JSON.stringify({
+  merchant_id: merchantId,  // ✅ CHANGED
+  plan_type: selectedPlan,
+  device_count: deviceCount,
+  customer_email: customerEmail || undefined,
+  source_id: token,
+  promo_code: promoCode || null
+})
       })
       
       if (!subscriptionResponse.ok) {
@@ -187,8 +212,7 @@ async function handleSubmit(e: React.FormEvent) {
       console.log('✅ Subscription created:', subscription.id)
       
       // Step 3: Redirect to success page
-      router.push(`/subscription/success?org_id=${orgId}&subscription_id=${subscription.id}`)
-      
+router.push(`/subscription/success?merchant_id=${merchantId}&subscription_id=${subscription.id}`)      
     } else {
       // Handle tokenization errors
       const errors = tokenResult.errors || []
@@ -521,159 +545,210 @@ return (
             </div>
           </div>
           
-          {/* Device Count & Email Row */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-            {/* Device Count */}
-            <div style={{
-              backgroundColor: '#1E293B',
-              padding: '24px',
-              borderRadius: '20px',
-              border: '1px solid #334155',
-              flex: '1'
-            }}>
-              <h3 style={{ 
-                fontSize: '16px', 
-                fontWeight: '700', 
-                marginBottom: '20px',
-                color: 'white',
-                textAlign: 'center'
-              }}>
-                Devices
-              </h3>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                gap: '16px'
-              }}>
-                <button
-                  type="button"
-                  onClick={() => setDeviceCount(Math.max(1, deviceCount - 1))}
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    border: '2px solid #475569',
-                    borderRadius: '12px',
-                    backgroundColor: '#374151',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '20px',
-                    fontWeight: '700',
-                    color: 'white',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#3B82F6'
-                    e.currentTarget.style.backgroundColor = '#1E40AF'
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#475569'
-                    e.currentTarget.style.backgroundColor = '#374151'
-                  }}
-                >
-                  −
-                </button>
-                <div style={{
-                  fontSize: '24px',
-                  fontWeight: '800',
-                  color: 'white',
-                  minWidth: '40px',
-                  textAlign: 'center'
-                }}>
-                  {deviceCount}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDeviceCount(deviceCount + 1)}
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    border: '2px solid #475569',
-                    borderRadius: '12px',
-                    backgroundColor: '#374151',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '20px',
-                    fontWeight: '700',
-                    color: 'white',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#3B82F6'
-                    e.currentTarget.style.backgroundColor = '#1E40AF'
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#475569'
-                    e.currentTarget.style.backgroundColor = '#374151'
-                  }}
-                >
-                  +
-                </button>
-              </div>
-              {deviceCount > 1 && (
-                <p style={{ 
-                  marginTop: '12px', 
-                  fontSize: '12px', 
-                  color: '#94A3B8',
-                  textAlign: 'center',
-                  fontWeight: '500'
-                }}>
-                  +${PLAN_PRICING[selectedPlan].extra} each
-                </p>
-              )}
-            </div>
-            
-            {/* Email */}
-            <div style={{
-              backgroundColor: '#1E293B',
-              padding: '24px',
-              borderRadius: '20px',
-              border: '1px solid #334155',
-              flex: '2'
-            }}>
-              <h3 style={{ 
-                fontSize: '16px', 
-                fontWeight: '700', 
-                marginBottom: '16px',
-                color: 'white'
-              }}>
-                Email Address
-              </h3>
-              <input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                style={{
-                  width: '100%',
-                  padding: '14px 16px',
-                  border: '2px solid #475569',
-                  borderRadius: '12px',
-                  fontSize: '16px',
-                  fontWeight: '500',
-                  boxSizing: 'border-box',
-                  backgroundColor: '#374151',
-                  color: 'white',
-                  transition: 'all 0.2s ease',
-                  outline: 'none'
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = '#3B82F6'
-                  e.currentTarget.style.backgroundColor = '#1E40AF'
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = '#475569'
-                  e.currentTarget.style.backgroundColor = '#374151'
-                }}
-              />
-            </div>
-          </div>
-          
+    {/* Device Count */}
+<div style={{
+  backgroundColor: '#1E293B',
+  padding: '24px',
+  borderRadius: '20px',
+  marginBottom: '24px',
+  border: '1px solid #334155'
+}}>
+  <h3 style={{ 
+    fontSize: '16px', 
+    fontWeight: '700', 
+    marginBottom: '20px',
+    color: 'white',
+    textAlign: 'center'
+  }}>
+    Devices
+  </h3>
+  <div style={{ 
+    display: 'flex', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    gap: '16px'
+  }}>
+    <button
+      type="button"
+      onClick={() => setDeviceCount(Math.max(1, deviceCount - 1))}
+      style={{
+        width: '44px',
+        height: '44px',
+        border: '2px solid #475569',
+        borderRadius: '12px',
+        backgroundColor: '#374151',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '20px',
+        fontWeight: '700',
+        color: 'white',
+        transition: 'all 0.2s ease'
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.borderColor = '#3B82F6'
+        e.currentTarget.style.backgroundColor = '#1E40AF'
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.borderColor = '#475569'
+        e.currentTarget.style.backgroundColor = '#374151'
+      }}
+    >
+      −
+    </button>
+    <div style={{
+      fontSize: '24px',
+      fontWeight: '800',
+      color: 'white',
+      minWidth: '40px',
+      textAlign: 'center'
+    }}>
+      {deviceCount}
+    </div>
+    <button
+      type="button"
+      onClick={() => setDeviceCount(deviceCount + 1)}
+      style={{
+        width: '44px',
+        height: '44px',
+        border: '2px solid #475569',
+        borderRadius: '12px',
+        backgroundColor: '#374151',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '20px',
+        fontWeight: '700',
+        color: 'white',
+        transition: 'all 0.2s ease'
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.borderColor = '#3B82F6'
+        e.currentTarget.style.backgroundColor = '#1E40AF'
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.borderColor = '#475569'
+        e.currentTarget.style.backgroundColor = '#374151'
+      }}
+    >
+      +
+    </button>
+  </div>
+  {deviceCount > 1 && (
+    <p style={{ 
+      marginTop: '12px', 
+      fontSize: '12px', 
+      color: '#94A3B8',
+      textAlign: 'center',
+      fontWeight: '500'
+    }}>
+      +${PLAN_PRICING[selectedPlan].extra} each
+    </p>
+  )}
+</div>
+
+{/* Email Section */}
+<div style={{
+  backgroundColor: '#1E293B',
+  padding: '24px',
+  borderRadius: '20px',
+  marginBottom: '24px',
+  border: '1px solid #334155'
+}}>
+  <h3 style={{ 
+    fontSize: '16px', 
+    fontWeight: '700', 
+    marginBottom: '16px',
+    color: 'white'
+  }}>
+    Email Address
+  </h3>
+  
+  {/* Auto-fill notification */}
+  {merchantEmail && emailSource === 'merchant' && (
+    <div style={{
+      marginBottom: '16px',
+      padding: '12px',
+      backgroundColor: '#1E40AF',
+      border: '1px solid #3B82F6',
+      borderRadius: '8px'
+    }}>
+      <p style={{
+        fontSize: '14px',
+        color: 'white',
+        margin: 0,
+        fontWeight: '600'
+      }}>
+        📧 Using your Square account email: <strong>{merchantEmail}</strong>
+      </p>
+      <p style={{
+        fontSize: '12px',
+        color: '#93C5FD',
+        margin: '4px 0 0 0'
+      }}>
+        You can change this if you want billing emails sent elsewhere.
+      </p>
+    </div>
+  )}
+  
+  <input
+    type="email"
+    value={customerEmail}
+    onChange={(e) => {
+      setCustomerEmail(e.target.value)
+      setEmailSource(e.target.value === merchantEmail ? 'merchant' : 'custom')
+    }}
+    placeholder={merchantEmail || "charity@example.org"}
+    style={{
+      width: '100%',
+      padding: '14px 16px',
+      border: '2px solid #475569',
+      borderRadius: '12px',
+      fontSize: '16px',
+      fontWeight: '500',
+      boxSizing: 'border-box',
+      backgroundColor: '#374151',
+      color: 'white',
+      transition: 'all 0.2s ease',
+      outline: 'none'
+    }}
+    onFocus={(e) => {
+      e.currentTarget.style.borderColor = '#3B82F6'
+      e.currentTarget.style.backgroundColor = '#1E40AF'
+    }}
+    onBlur={(e) => {
+      e.currentTarget.style.borderColor = '#475569'
+      e.currentTarget.style.backgroundColor = '#374151'
+    }}
+    required={!merchantEmail}
+  />
+  
+  {/* Status indicators */}
+  {merchantEmail && customerEmail === merchantEmail && (
+    <p style={{
+      fontSize: '12px',
+      color: '#10B981',
+      margin: '8px 0 0 0',
+      fontWeight: '600'
+    }}>
+      ✅ Using your Square account email
+    </p>
+  )}
+  
+  {merchantEmail && customerEmail !== merchantEmail && customerEmail.length > 0 && (
+    <p style={{
+      fontSize: '12px',
+      color: '#F59E0B',
+      margin: '8px 0 0 0',
+      fontWeight: '600'
+    }}>
+      📧 Using custom email (different from your Square account)
+    </p>
+  )}
+</div>
+
           {/* Payment Details */}
           <div style={{
             backgroundColor: '#1E293B',
@@ -916,7 +991,7 @@ return (
           {/* Return to App */}
           <div style={{ textAlign: 'center' }}>
             <a 
-              href={`shulpad://subscription/cancelled?org_id=${orgId}`}
+href={`shulpad://subscription/cancelled?merchant_id=${merchantId}`}
               style={{
                 color: '#94A3B8',
                 fontSize: '16px',

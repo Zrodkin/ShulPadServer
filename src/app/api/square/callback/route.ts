@@ -4,6 +4,7 @@ import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
 import { normalizeOrganizationId } from "@/lib/organizationUtils"
+import { getMerchantEmail } from "@/lib/square-merchant"
 
 // Add MySQL datetime conversion function
 function convertToMySQLDatetime(isoString: string): string {
@@ -155,27 +156,37 @@ export async function GET(request: NextRequest) {
       try {
         const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id)
         
-        // 🚀 OPTIMIZATION 5: Single atomic operation instead of transaction
-        // Use INSERT ... ON DUPLICATE KEY UPDATE to handle both insert and update in one operation
-        await db.execute(
-          `INSERT INTO square_connections (
-            organization_id, 
-            merchant_id,
-            location_id,
-            access_token, 
-            refresh_token, 
-            expires_at, 
-            created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, NOW())
-          ON DUPLICATE KEY UPDATE
-            merchant_id = VALUES(merchant_id),
-            location_id = VALUES(location_id),
-            access_token = VALUES(access_token),
-            refresh_token = VALUES(refresh_token),
-            expires_at = VALUES(expires_at),
-            updated_at = NOW()`,
-          [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, convertToMySQLDatetime(expires_at)]
-        )
+   // 🆕 Fetch merchant email
+console.log("🔍 Fetching merchant email...")
+const merchantEmail = await getMerchantEmail(access_token, merchant_id)
+if (merchantEmail) {
+  console.log("✅ Found merchant email:", merchantEmail)
+} else {
+  console.log("⚠️ Could not find merchant email")
+}
+
+// 🚀 OPTIMIZATION 5: Single atomic operation including merchant email
+await db.execute(
+  `INSERT INTO square_connections (
+    organization_id, 
+    merchant_id,
+    location_id,
+    access_token, 
+    refresh_token, 
+    expires_at,
+    merchant_email,
+    created_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+  ON DUPLICATE KEY UPDATE
+    merchant_id = VALUES(merchant_id),
+    location_id = VALUES(location_id),
+    access_token = VALUES(access_token),
+    refresh_token = VALUES(refresh_token),
+    expires_at = VALUES(expires_at),
+    merchant_email = VALUES(merchant_email),
+    updated_at = NOW()`,
+  [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, convertToMySQLDatetime(expires_at), merchantEmail]
+)
 
         // 🚀 OPTIMIZATION 6: Update pending tokens in parallel (fire and forget)
         // Don't wait for this to complete before redirecting
