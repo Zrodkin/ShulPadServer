@@ -1,69 +1,10 @@
 // src/app/subscription/checkout/page.tsx - Redesigned & Fixed
+'use client'
+
 import React, { useEffect, useState, useRef, Suspense } from 'react';
-
-// --- Helper Hooks to replace Next.js functionality ---
-
-// Replaces Next.js's useSearchParams
-const useSearchParams = () => {
-  const [params, setParams] = useState(new URLSearchParams());
-
-  useEffect(() => {
-    // Ensure this runs only on the client side
-    setParams(new URLSearchParams(window.location.search));
-  }, []);
-
-  return params;
-};
-
-// Replaces Next.js's useRouter
-const useRouter = () => {
-  return {
-    push: (path: string) => {
-      // Ensure this runs only on the client side
-      window.location.href = path;
-    },
-  };
-};
-
-// Replaces Next.js's Head component
-const Head = ({ children }: { children: React.ReactNode }) => {
-  useEffect(() => {
-    const titleElement = React.Children.toArray(children).find(
-      (child) =>
-        React.isValidElement(child) &&
-        child.type === 'title'
-    );
-
-    // Type guard to ensure titleElement is a valid React element with the expected props.
-    if (
-      React.isValidElement(titleElement) &&
-      titleElement.props &&
-      typeof (titleElement.props as any).children === 'string'
-    ) {
-      document.title = (titleElement.props as any).children;
-    }
-  }, [children]);
-
-  return null;
-};
-
-// Replaces Next.js's Script component
-const Script = ({ src, onLoad, strategy }: { src: string; onLoad: () => void; strategy?: string }) => {
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.onload = onLoad;
-
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, [src, onLoad]);
-
-  return null;
-};
+import { useSearchParams, useRouter } from 'next/navigation';
+import Script from 'next/script';
+import Head from 'next/head';
 
 
 // --- UI Helper Components ---
@@ -307,6 +248,7 @@ function CheckoutPageContent() {
       <Script 
         src="https://web.squarecdn.com/v1/square.js"
         onLoad={() => setSquareLoaded(true)}
+        strategy="afterInteractive"
       />
       
       <div className="min-h-screen font-sans antialiased bg-slate-50 text-slate-800">
@@ -470,7 +412,7 @@ function CheckoutPageContent() {
 }
 
 // Main App component
-function App() {
+export default function CheckoutPage() {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
@@ -484,5 +426,3 @@ function App() {
     </Suspense>
   )
 }
-
-export default App;
