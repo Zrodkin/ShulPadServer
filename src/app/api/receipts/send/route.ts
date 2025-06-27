@@ -793,6 +793,7 @@ function generateReceiptHTML(data: ReceiptData): string {
   <body>
     <div class="email-container">
       <div class="header">
+        <img src="https://shulpad.com/attached_assets/emaillogo.png" alt="ShulPad" style="height: 40px; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto;">
         <div class="org-name">${safeOrgName}</div>
         <div class="receipt-subject">Donation Receipt</div>
       </div>
