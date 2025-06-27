@@ -1,13 +1,25 @@
-// src/app/api/subscriptions/create/route.ts - FIXED CUSTOM PHASES VERSION
+// src/app/api/subscriptions/create/route.ts - FIXED WITH TYPES
 import { NextResponse, type NextRequest } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 
+// Add type definitions
+type PlanType = 'monthly' | 'yearly';
+
+interface SubscriptionRequest {
+  merchant_id: string;
+  plan_type: PlanType;
+  device_count?: number;
+  customer_email?: string;
+  source_id: string;
+  promo_code?: string | null;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body: SubscriptionRequest = await request.json()
     const { 
-      merchant_id,  // ✅ Using merchant_id as primary identifier
+      merchant_id,
       plan_type,
       device_count = 1,
       customer_email,
@@ -51,14 +63,14 @@ export async function POST(request: NextRequest) {
 
     console.log("📧 Using email for subscription:", finalCustomerEmail)
 
-    // Calculate pricing (as per original plan)
-    const pricing = {
+    // Calculate pricing with proper typing
+    const pricing: Record<PlanType, { base: number; extra: number }> = {
       monthly: { base: 4900, extra: 1500 }, // $49 + $15 per extra device
       yearly: { base: 49000, extra: 15000 }  // $490 + $150 per extra device
     }
 
-    const basePriceCents = pricing[plan_type as keyof typeof pricing].base
-    const extraDeviceCost = (device_count - 1) * pricing[plan_type as keyof typeof pricing].extra
+    const basePriceCents = pricing[plan_type].base
+    const extraDeviceCost = (device_count - 1) * pricing[plan_type].extra
     const totalPrice = basePriceCents + extraDeviceCost
 
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
@@ -71,7 +83,7 @@ export async function POST(request: NextRequest) {
     const customerResponse = await axios.post(
       `https://connect.${SQUARE_DOMAIN}/v2/customers`,
       {
-idempotency_key: `customer-${merchant_id}-${Date.now()}`,
+        idempotency_key: `customer-${merchant_id}-${Date.now()}`,
         given_name: finalCustomerEmail.split('@')[0],
         email_address: finalCustomerEmail
       },
@@ -110,9 +122,14 @@ idempotency_key: `customer-${merchant_id}-${Date.now()}`,
     const cardId = cardResponse.data.card.id
     console.log(`✅ Card stored: ${cardId}`)
 
-    // Step 3: ✅ SIMPLE: Create Square subscription using CUSTOM PHASES
-    console.log("📅 Creating Square subscription with custom phases...")
-    
+    // Step 3: Create subscription with price override
+    const PLAN_VARIATION_IDS: Record<PlanType, string> = {
+      monthly: process.env.SQUARE_MONTHLY_PLAN_VARIATION_ID || "EUJVMU555VG5VCARC4AOO33U",
+      yearly: process.env.SQUARE_YEARLY_PLAN_VARIATION_ID || "AYDMP6K4DAFD2XHZQZMSDZHY"
+    }
+
+    console.log("📅 Creating Square subscription with price override...")
+
     const subscriptionResponse = await axios.post(
       `https://connect.${SQUARE_DOMAIN}/v2/subscriptions`,
       {
@@ -120,20 +137,16 @@ idempotency_key: `customer-${merchant_id}-${Date.now()}`,
         location_id: location_id,
         customer_id: customerId,
         card_id: cardId,
-        start_date: new Date().toISOString().split('T')[0], // Today
+        start_date: new Date().toISOString().split('T')[0],
         
-        // ✅ SIMPLE: Custom phases with dynamic pricing (no catalog plans needed!)
-        phases: [{
-          ordinal: 0,
-          pricing: {
-            type: "STATIC",
-            price_money: {
-              amount: totalPrice,  // Your actual dynamic price
-              currency: "USD"
-            }
-          },
-          cadence: plan_type === 'monthly' ? 'MONTHLY' : 'ANNUAL'
-        }],
+        // Use the appropriate plan variation ID
+        plan_variation_id: PLAN_VARIATION_IDS[plan_type],
+        
+        // Override the price with your calculated amount
+        price_override_money: {
+          amount: totalPrice,
+          currency: "USD"
+        },
         
         source: {
           name: "ShulPad"
@@ -151,7 +164,7 @@ idempotency_key: `customer-${merchant_id}-${Date.now()}`,
     const subscription = subscriptionResponse.data.subscription
     console.log(`✅ Square subscription created: ${subscription.id}`)
 
-     // Step 4: Store in database using merchant_id (CORRECTED for your schema)
+    // Step 4: Store in database using merchant_id
     await db.execute(`
       INSERT INTO subscriptions (
         organization_id,
@@ -173,19 +186,19 @@ idempotency_key: `customer-${merchant_id}-${Date.now()}`,
         status = VALUES(status),
         updated_at = NOW()
     `, [
-      organization_id || 'default',  // organization_id (keep for compatibility)
-      subscription.id,               // square_subscription_id
-      plan_type,                     // plan_type
-      device_count,                  // device_count
-      basePriceCents,               // base_price_cents
-      totalPrice,                   // total_price_cents
-      mapSquareStatusToOurStatus(subscription.status), // status
-      subscription.start_date,       // current_period_start
-      subscription.charged_through_date, // current_period_end
-      merchant_id                    // merchant_id (PRIMARY KEY for lookups)
+      organization_id || 'default',
+      subscription.id,
+      plan_type,
+      device_count,
+      basePriceCents,
+      totalPrice,
+      mapSquareStatusToOurStatus(subscription.status),
+      subscription.start_date,
+      subscription.charged_through_date,
+      merchant_id
     ])
 
-    // Step 5: Register device using merchant_id (CORRECTED for your schema)
+    // Step 5: Register device
     await db.execute(`
       INSERT INTO device_registrations (
         organization_id,
@@ -196,10 +209,10 @@ idempotency_key: `customer-${merchant_id}-${Date.now()}`,
       ) VALUES (?, ?, ?, 'active', ?)
       ON DUPLICATE KEY UPDATE last_active = NOW(), status = 'active'
     `, [
-      organization_id || 'default', // organization_id (keep for compatibility)
-      'primary',                    // device_id
-      'Primary Device',             // device_name
-      merchant_id                   // merchant_id
+      organization_id || 'default',
+      'primary',
+      'Primary Device',
+      merchant_id
     ])
 
     console.log(`✅ Subscription stored in database`)
