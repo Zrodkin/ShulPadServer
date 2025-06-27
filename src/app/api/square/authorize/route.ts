@@ -1,3 +1,5 @@
+// api/square/authorize/route.ts - FIXED VERSION
+
 import { NextResponse } from "next/server"
 import { v4 as uuidv4 } from "uuid"
 import { createClient } from "@/lib/db"
@@ -22,6 +24,7 @@ export async function GET(request: Request) {
 
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
+    // ✅ FIXED: Added CUSTOMERS_WRITE and SUBSCRIPTIONS_WRITE scopes
     const scopes = [
       "MERCHANT_PROFILE_READ",
       "PAYMENTS_WRITE",
@@ -29,16 +32,21 @@ export async function GET(request: Request) {
       "PAYMENTS_READ",
       "ITEMS_READ",
       "ITEMS_WRITE",
-      "ORDERS_WRITE"
+      "ORDERS_WRITE",
+      "CUSTOMERS_WRITE",        // ✅ ADDED: Required for creating customers
+      "CUSTOMERS_READ",         // ✅ ADDED: Helpful for subscription management
+      "SUBSCRIPTIONS_WRITE",    // ✅ ADDED: Required for creating subscriptions
+      "SUBSCRIPTIONS_READ",     // ✅ ADDED: Required for checking subscription status
+      "INVOICES_WRITE",         // ✅ ADDED: Required for subscription invoicing
+      "INVOICES_READ"           // ✅ ADDED: Helpful for tracking payments
     ]
 
     const state = uuidv4()
 
-    // Store the state in the database BEFORE returning it to the client
+    // Store the state in the database
     try {
       const db = createClient()
       
-      // ✅ FIX: Simplified insert without complex conflict handling
       await db.execute(
         `INSERT INTO square_pending_tokens (
           state, 
@@ -63,15 +71,6 @@ export async function GET(request: Request) {
       logger.info("✅ Stored pending token state", { state, deviceId })
     } catch (dbError) {
       logger.error("❌ Database error storing state", { error: dbError })
-      
-      // Continue even if storage fails, but log the error
-      if (dbError instanceof Error) {
-        logger.error("Database error details", {
-          message: dbError.message,
-          stack: dbError.stack,
-          name: dbError.name
-        })
-      }
     }
 
     const authUrl =
@@ -83,11 +82,12 @@ export async function GET(request: Request) {
       `&redirect_uri=${REDIRECT_URI}` +
       (organizationId ? `&organization_id=${organizationId}` : "")
 
-    logger.info("✅ Generated OAuth URL", { 
+    logger.info("✅ Generated OAuth URL with all required scopes", { 
       state, 
       organizationId, 
       deviceId,
-      scopes: scopes.join("+") 
+      scopes: scopes.join("+"),
+      scopeCount: scopes.length
     })
     
     return NextResponse.json({ authUrl, state })
