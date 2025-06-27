@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     const customerResponse = await axios.post(
       `https://connect.${SQUARE_DOMAIN}/v2/customers`,
       {
+        idempotency_key: `customer_${merchant_id}_${Date.now()}`,
         given_name: finalCustomerEmail.split('@')[0],
         email_address: finalCustomerEmail
       },
