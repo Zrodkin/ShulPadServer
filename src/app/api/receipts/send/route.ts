@@ -2,14 +2,10 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/db" // Assuming this is your DB client setup
 import { logger } from "@/lib/logger" // Assuming this is your logger setup
-import sgMail from '@sendgrid/mail'
+import { sesClient, mapSESError } from "@/lib/ses-client"
+import { SendEmailCommand, SendRawEmailCommand } from '@aws-sdk/client-ses'
 
-// Initialize SendGrid with error handling
-if (!process.env.SENDGRID_API_KEY) {
-  logger.error("SENDGRID_API_KEY environment variable is not set")
-  throw new Error("SendGrid API key is required")
-}
-sgMail.setApiKey(process.env.SENDGRID_API_KEY)
+
 
 // TypeScript interfaces
 interface SendReceiptRequest {
@@ -373,7 +369,7 @@ async function updateReceiptLogSuccess(db: any, receiptLogId: number, messageId:
       `UPDATE receipt_log 
 SET delivery_status = 'sent', 
     sent_at = NOW(), 
-    sendgrid_message_id = ?,
+    ses_message_id = ?,
     updated_at = NOW()
 WHERE id = ?`,
       [messageId, receiptLogId]
@@ -450,68 +446,178 @@ async function sendReceiptEmail(receiptData: ReceiptData, orgSettings: Organizat
     const htmlContent = generateReceiptHTML(receiptData);
     const textContent = generateReceiptText(receiptData);
     
-    // Generate PDF attachment if requested
-    let attachments = undefined;
+    // Generate PDF attachment if requested (existing logic unchanged)
+    let pdfBuffer: Buffer | undefined;
     if (includePDF) {
       try {
-        const pdfBuffer = await generateTaxInvoicePDF(receiptData);
-        attachments = [{
-          content: pdfBuffer.toString('base64'),
-          filename: `Tax_Receipt_${receiptData.donation.transactionId}.pdf`,
-          type: 'application/pdf',
-          disposition: 'attachment'
-        }];
+        pdfBuffer = await generateTaxInvoicePDF(receiptData);
       } catch (pdfError) {
         logger.error("Failed to generate PDF attachment", { error: pdfError });
         // Continue without PDF - don't fail the entire email
       }
     }
 
-    const msg = {
-      to: receiptData.donor.email,
-      from: {
-        email: process.env.SENDGRID_FROM_EMAIL || 'info@shulpad.com',
-        name: 'ShulPad'
-      },
-      subject: 'Thank You For Your Donation!',
-      text: textContent,
-      html: htmlContent,
-      ...(attachments && { attachments }), // Only add if PDF was generated
-      categories: ['donation-receipt', `org-${orgSettings.id}`],
-      customArgs: {
-        organization_id: orgSettings.id,
-        transaction_id: receiptData.donation.transactionId,
-        amount: receiptData.donation.amount.toString(),
-        has_pdf: includePDF.toString() // Track PDF inclusion
-      },
-      trackingSettings: {
-        clickTracking: { enable: true, enableText: true },
-        openTracking: { enable: true },
-        subscriptionTracking: { enable: false }
-      }
-    };
+    const fromAddress = process.env.SES_FROM_EMAIL || 'info@shulpad.com';
+    const toAddress = receiptData.donor.email;
+    const subject = 'Thank You For Your Donation!';
 
-    const response = await sgMail.send(msg);
-    const messageId = (response && response[0] && response[0].headers && response[0].headers['x-message-id']) 
-                      ? response[0].headers['x-message-id'] 
-                      : undefined;
-    
-    return { success: true, messageId };
+    let result;
 
-  } catch (sendGridError: any) {
-    let errorMessage = "Unknown SendGrid error";
-    if (sendGridError.response && sendGridError.response.body && sendGridError.response.body.errors) {
-      errorMessage = `SendGrid API error: ${sendGridError.response.body.errors.map((e: any) => e.message).join(', ')}`;
-    } else if (sendGridError.message) {
-      errorMessage = sendGridError.message;
+    if (pdfBuffer) {
+      // Send email with PDF attachment using raw email
+      const boundary = `boundary-${Date.now()}`;
+      const rawEmail = createRawEmailWithAttachment({
+        from: fromAddress,
+        to: toAddress,
+        subject,
+        htmlContent,
+        textContent,
+        pdfBuffer,
+        pdfFilename: `Tax_Receipt_${receiptData.donation.transactionId}.pdf`,
+        boundary,
+        organizationId: orgSettings.id,
+        transactionId: receiptData.donation.transactionId,
+        amount: receiptData.donation.amount
+      });
+
+      const rawCommand = new SendRawEmailCommand({
+        RawMessage: {
+          Data: Buffer.from(rawEmail)
+        },
+        Source: fromAddress,
+        Destinations: [toAddress],
+        Tags: [
+          { Name: 'Category', Value: 'donation-receipt' },
+          { Name: 'Organization', Value: `org-${orgSettings.id}` },
+          { Name: 'HasPDF', Value: 'true' }
+        ]
+      });
+
+      result = await sesClient.send(rawCommand);
+    } else {
+      // Send simple email without attachment
+      const emailCommand = new SendEmailCommand({
+        Source: fromAddress,
+        Destination: {
+          ToAddresses: [toAddress]
+        },
+        Message: {
+          Subject: {
+            Data: subject,
+            Charset: 'UTF-8'
+          },
+          Body: {
+            Html: {
+              Data: htmlContent,
+              Charset: 'UTF-8'
+            },
+            Text: {
+              Data: textContent,
+              Charset: 'UTF-8'
+            }
+          }
+        },
+        Tags: [
+          { Name: 'Category', Value: 'donation-receipt' },
+          { Name: 'Organization', Value: `org-${orgSettings.id}` },
+          { Name: 'HasPDF', Value: 'false' },
+          { Name: 'TransactionId', Value: receiptData.donation.transactionId },
+          { Name: 'Amount', Value: receiptData.donation.amount.toString() }
+        ]
+      });
+
+      result = await sesClient.send(emailCommand);
     }
     
-    logger.error("SendGrid sending error", { 
-      error: sendGridError, 
-      responseBody: sendGridError.response?.body 
+    return { 
+      success: true, 
+      messageId: result.MessageId 
+    };
+
+  } catch (sesError: any) {
+    const errorMessage = mapSESError(sesError);
+    
+    logger.error("SES sending error", { 
+      error: sesError,
+      errorName: sesError.name,
+      errorMessage: errorMessage,
+      organizationId: orgSettings.id,
+      donorEmail: receiptData.donor.email
     });
-    return { success: false, error: errorMessage };
+    
+    return { 
+      success: false, 
+      error: errorMessage 
+    };
   }
+}
+
+// Helper function to create raw email with PDF attachment
+function createRawEmailWithAttachment(params: {
+  from: string;
+  to: string;
+  subject: string;
+  htmlContent: string;
+  textContent: string;
+  pdfBuffer: Buffer;
+  pdfFilename: string;
+  boundary: string;
+  organizationId: string;
+  transactionId: string;
+  amount: number;
+}): string {
+  const {
+    from,
+    to,
+    subject,
+    htmlContent,
+    textContent,
+    pdfBuffer,
+    pdfFilename,
+    boundary,
+    organizationId,
+    transactionId,
+    amount
+  } = params;
+
+  const rawEmail = [
+    `From: ShulPad <${from}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    `X-Organization-ID: ${organizationId}`,
+    `X-Transaction-ID: ${transactionId}`,
+    `X-Amount: ${amount}`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: multipart/alternative; boundary="${boundary}-alt"`,
+    ``,
+    `--${boundary}-alt`,
+    `Content-Type: text/plain; charset=UTF-8`,
+    `Content-Transfer-Encoding: 7bit`,
+    ``,
+    textContent,
+    ``,
+    `--${boundary}-alt`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `Content-Transfer-Encoding: 7bit`,
+    ``,
+    htmlContent,
+    ``,
+    `--${boundary}-alt--`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: application/pdf`,
+    `Content-Disposition: attachment; filename="${pdfFilename}"`,
+    `Content-Transfer-Encoding: base64`,
+    ``,
+    pdfBuffer.toString('base64'),
+    ``,
+    `--${boundary}--`
+  ].join('\r\n');
+
+  return rawEmail;
 }
 
 
