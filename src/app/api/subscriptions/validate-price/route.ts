@@ -1,9 +1,16 @@
-// src/app/api/subscriptions/validate-price/route.ts
+// src/app/api/subscriptions/validate-price/route.ts - FIXED
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/db";
 
 type PlanType = 'monthly' | 'yearly';
 type DiscountType = 'percentage' | 'fixed_amount';
+
+interface ValidatePriceRequest {
+    merchant_id: string;
+    plan_type: PlanType;
+    device_count?: number;
+    promo_code?: string | null;
+}
 
 interface PromoCode {
   id: number;
@@ -18,16 +25,21 @@ interface PromoCode {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body: ValidatePriceRequest = await request.json();
     const { merchant_id, plan_type, device_count = 1, promo_code = null } = body;
 
     if (!merchant_id || !plan_type) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    // This check ensures plan_type is valid and satisfies TypeScript
+    if (plan_type !== 'monthly' && plan_type !== 'yearly') {
+        return NextResponse.json({ error: "Invalid plan_type. Must be 'monthly' or 'yearly'." }, { status: 400 });
+    }
+
     const db = createClient();
     
-    // --- Price Calculation Logic (mirrors the main create route) ---
+    // --- Price Calculation Logic ---
 
     // 1. Get Base Price
     const pricing: Record<PlanType, { base: number; extra: number }> = {
