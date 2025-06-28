@@ -1,4 +1,4 @@
-// src/app/api/subscriptions/create/route.ts - UPDATED TO BYPASS CARD FOR FREE SUBSCRIPTIONS
+// src/app/api/subscriptions/create/route.ts - FIXED to handle free subscriptions reliably
 import { NextResponse, type NextRequest } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
@@ -12,7 +12,7 @@ interface SubscriptionRequest {
   plan_type: PlanType;
   device_count?: number;
   customer_email?: string;
-  source_id: string; // Will be ignored if price is 0
+  source_id: string | null; // Can be null for free subscriptions
   promo_code?: string | null;
 }
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       plan_type,
       device_count = 1,
       customer_email,
-      source_id, // source_id is only required if finalPrice > 0
+      source_id,
       promo_code = null
     } = body
 
@@ -163,8 +163,6 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Square subscription created: ${subscriptionResponseData.id}`)
     } else {
       // --- FREE SUBSCRIPTION FLOW (NO CARD NEEDED) ---
-      // This flow bypasses Square for subscription creation.
-      // NOTE: This subscription will NOT automatically renew or charge the user after the first period.
       console.log("🎉 Starting free subscription flow (local record only)...");
       const startDate = new Date();
       const endDate = new Date(startDate);
@@ -175,7 +173,8 @@ export async function POST(request: NextRequest) {
       }
 
       subscriptionResponseData = {
-        id: `local-${crypto.randomUUID()}`,
+        // FIXED: Replaced crypto.randomUUID() with a more reliable method.
+        id: `local-${merchant_id}-${Date.now()}`, 
         status: 'ACTIVE',
         start_date: startDate.toISOString().split('T')[0],
         charged_through_date: endDate.toISOString().split('T')[0],
