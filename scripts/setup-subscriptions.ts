@@ -125,7 +125,13 @@ async function setupDatabase() {
     console.log("✅ Database setup complete")
     
   } catch (error) {
-    throw new Error(`Database setup failed: ${error.message}`)
+    if (error instanceof Error) {
+      console.error(`\n❌ Database setup failed: ${error.message}`);
+      throw new Error(`Database setup failed: ${error.message}`);
+    } else {
+      console.error(`\n❌ Database setup failed with an unknown error:`, error);
+      throw new Error(`Database setup failed with an unknown error: ${String(error)}`);
+    }
   }
 }
 
@@ -221,7 +227,11 @@ async function createTestData() {
     console.log("✅ Test data created")
     
   } catch (error) {
-    console.error("   ⚠️  Test data creation failed:", error.message)
+    if (error instanceof Error) {
+      console.error("   ⚠️  Test data creation failed:", error.message)
+    } else {
+      console.error("   ⚠️  Test data creation failed:", error)
+    }
   }
 }
 
@@ -256,7 +266,11 @@ async function verifySetup() {
     console.log("\n✅ Setup verification complete")
     
   } catch (error) {
-    console.error("   ❌ Verification failed:", error.message)
+    if (error instanceof Error) {
+      console.error("   ❌ Verification failed:", error.message)
+    } else {
+      console.error("   ❌ Verification failed:", String(error))
+    }
     throw error
   }
 }

@@ -2,6 +2,10 @@
 // 8. UPDATE PAYMENT METHOD
 // app/api/subscriptions/payment-method/route.ts
 // ==========================================
+import { NextResponse } from 'next/server';
+import mysql from 'mysql2/promise';
+import axios from 'axios';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -17,7 +21,7 @@ export async function POST(request: Request) {
     const db = createClient()
 
     // Get subscription and connection info
-    const result = await db.execute(
+    const [rows] = await db.execute(
       `SELECT 
         s.*,
         sc.access_token
@@ -30,11 +34,11 @@ export async function POST(request: Request) {
       [merchant_id]
     )
 
-    if (result.rows.length === 0) {
+    if ((rows as any[]).length === 0) {
       return NextResponse.json({ error: "No active subscription found" }, { status: 404 })
     }
 
-    const subscription = result.rows[0]
+    const subscription = (rows as any[])[0]
 
     if (subscription.square_subscription_id.startsWith('free_')) {
       return NextResponse.json({ 
@@ -110,12 +114,20 @@ export async function POST(request: Request) {
         }
       })
 
-    } catch (squareError: any) {
-      console.error("Square API Error:", squareError.response?.data)
+   } catch (squareError) {
+      if (squareError instanceof Error && 'response' in squareError && squareError.response) {
+        const axiosError = squareError as any;
+        console.error("Square API Error:", axiosError.response?.data);
+        return NextResponse.json({ 
+          error: "Failed to update payment method",
+          details: axiosError.response?.data?.errors || axiosError.message
+        }, { status: 500 });
+      }
+      console.error("Square API Error:", squareError);
       return NextResponse.json({ 
         error: "Failed to update payment method",
-        details: squareError.response?.data?.errors || squareError.message
-      }, { status: 500 })
+        details: String(squareError)
+      }, { status: 500 });
     }
 
   } catch (error: any) {
@@ -125,4 +137,17 @@ export async function POST(request: Request) {
       details: error.message 
     }, { status: 500 })
   }
+}
+function createClient() {
+    // You may want to load these from environment variables in production
+    const connection = mysql.createPool({
+        host: process.env.DB_HOST || 'localhost',
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'shulpad',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+    });
+    return connection;
 }

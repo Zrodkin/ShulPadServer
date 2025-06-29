@@ -2,6 +2,10 @@
 // 5. RESUME SUBSCRIPTION
 // app/api/subscriptions/resume/route.ts
 // ==========================================
+import { NextResponse } from 'next/server';
+import { createClient } from "@/lib/db";
+import axios from 'axios';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -15,11 +19,11 @@ export async function POST(request: Request) {
 
     // Get paused subscription
     const result = await db.execute(
-      `SELECT s.*, sc.access_token 
+      `SELECT s.*, sc.access_token
        FROM subscriptions s
        JOIN square_connections sc ON s.merchant_id = sc.merchant_id
        WHERE s.merchant_id = ? AND s.status = 'paused'
-       ORDER BY s.created_at DESC 
+       ORDER BY s.created_at DESC
        LIMIT 1`,
       [merchant_id]
     )
@@ -28,12 +32,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No paused subscription found" }, { status: 404 })
     }
 
-    const subscription = result.rows[0]
+    const subscription = result.rows[0] as any;
 
     // Handle free subscriptions
     if (subscription.square_subscription_id.startsWith('free_')) {
       await db.execute(
-        `UPDATE subscriptions 
+        `UPDATE subscriptions
          SET status = 'active', updated_at = NOW()
          WHERE id = ?`,
         [subscription.id]
@@ -66,7 +70,7 @@ export async function POST(request: Request) {
 
       // Update local database
       await db.execute(
-        `UPDATE subscriptions 
+        `UPDATE subscriptions
          SET status = 'active', updated_at = NOW()
          WHERE id = ?`,
         [subscription.id]
@@ -74,7 +78,7 @@ export async function POST(request: Request) {
 
       // Log resume event
       await db.execute(
-        `INSERT INTO subscription_events 
+        `INSERT INTO subscription_events
          (subscription_id, event_type, event_data, created_at)
          VALUES (?, 'resumed', ?, NOW())`,
         [subscription.id, JSON.stringify({})]
@@ -87,7 +91,7 @@ export async function POST(request: Request) {
 
     } catch (squareError: any) {
       console.error("Square API Error:", squareError.response?.data)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: "Failed to resume subscription",
         details: squareError.response?.data?.errors || squareError.message
       }, { status: 500 })
@@ -95,9 +99,9 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("Error resuming subscription:", error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: "Failed to resume subscription",
-      details: error.message 
+      details: error.message
     }, { status: 500 })
   }
 }

@@ -2,6 +2,46 @@
 // 2. GET SUBSCRIPTION STATUS
 // app/api/subscriptions/status/route.ts
 // ==========================================
+import { NextResponse } from 'next/server';
+import { createClient } from "@/lib/db";
+import axios from 'axios';
+
+// Helper function to map Square's status to your local status values
+function mapSquareStatus(status: string): string {
+  switch (status) {
+    case 'ACTIVE':
+      return 'active';
+    case 'PAUSED':
+      return 'paused';
+    case 'CANCELED':
+      return 'canceled';
+    case 'PENDING':
+      return 'pending';
+    case 'DEACTIVATED':
+      return 'deactivated';
+    default:
+      return 'unknown';
+  }
+}
+
+// Helper function to calculate the next billing date as a fallback
+function calculateNextBillingDate(subscription: any): string | null {
+  if (subscription.current_period_end) {
+    return new Date(subscription.current_period_end).toISOString().split('T')[0];
+  }
+  if (subscription.current_period_start && subscription.plan_type) {
+    const startDate = new Date(subscription.current_period_start);
+    if (subscription.plan_type === 'monthly') {
+      startDate.setMonth(startDate.getMonth() + 1);
+    } else {
+      startDate.setFullYear(startDate.getFullYear() + 1);
+    }
+    return startDate.toISOString().split('T')[0];
+  }
+  return null;
+}
+
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -15,7 +55,7 @@ export async function GET(request: Request) {
 
     // Get subscription with Square connection info
     const result = await db.execute(
-      `SELECT 
+      `SELECT
         s.*,
         sc.access_token,
         pc.code as promo_code_used,
@@ -24,23 +64,23 @@ export async function GET(request: Request) {
        FROM subscriptions s
        JOIN square_connections sc ON s.merchant_id = sc.merchant_id
        LEFT JOIN promo_codes pc ON s.promo_code = pc.code
-       WHERE s.merchant_id = ? 
+       WHERE s.merchant_id = ?
        AND s.status IN ('active', 'paused', 'grace_period')
-       ORDER BY s.created_at DESC 
+       ORDER BY s.created_at DESC
        LIMIT 1`,
       [merchant_id]
-    )
+    );
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         subscription: null,
         can_use_kiosk: false,
         message: "No active subscription found"
       })
     }
 
-    const subscription = result.rows[0]
-    
+    const subscription = result.rows[0] as any;
+
     // For free subscriptions, just return the local data
     if (subscription.square_subscription_id.startsWith('free_')) {
       return NextResponse.json({
@@ -77,8 +117,8 @@ export async function GET(request: Request) {
       // Update local status if changed
       if (currentStatus !== subscription.status) {
         await db.execute(
-          `UPDATE subscriptions 
-           SET status = ?, updated_at = NOW() 
+          `UPDATE subscriptions
+           SET status = ?, updated_at = NOW()
            WHERE id = ?`,
           [currentStatus, subscription.id]
         )
@@ -94,7 +134,7 @@ export async function GET(request: Request) {
         const gracePeriodDays = 7
         gracePeriodEnd = new Date(subscription.grace_period_start)
         gracePeriodEnd.setDate(gracePeriodEnd.getDate() + gracePeriodDays)
-        
+
         if (new Date() < gracePeriodEnd) {
           canUseKiosk = true
         }
@@ -133,9 +173,9 @@ export async function GET(request: Request) {
 
   } catch (error: any) {
     console.error("Error fetching subscription status:", error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: "Failed to fetch subscription status",
-      details: error.message 
+      details: error.message
     }, { status: 500 })
   }
 }

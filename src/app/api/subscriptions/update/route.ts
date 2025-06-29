@@ -2,6 +2,10 @@
 // 6. UPDATE SUBSCRIPTION (Change Plan/Devices)
 // app/api/subscriptions/update/route.ts
 // ==========================================
+import { NextResponse } from 'next/server';
+import { createClient } from "@/lib/db";
+import axios from 'axios';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -15,11 +19,11 @@ export async function POST(request: Request) {
 
     // Get current subscription
     const result = await db.execute(
-      `SELECT s.*, sc.access_token 
+      `SELECT s.*, sc.access_token, sc.location_id
        FROM subscriptions s
        JOIN square_connections sc ON s.merchant_id = sc.merchant_id
        WHERE s.merchant_id = ? AND s.status = 'active'
-       ORDER BY s.created_at DESC 
+       ORDER BY s.created_at DESC
        LIMIT 1`,
       [merchant_id]
     )
@@ -28,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No active subscription found" }, { status: 404 })
     }
 
-    const subscription = result.rows[0]
+    const subscription = result.rows[0] as any;
     const planChanged = new_plan_type && new_plan_type !== subscription.plan_type
     const devicesChanged = new_device_count && new_device_count !== subscription.device_count
 
@@ -39,20 +43,20 @@ export async function POST(request: Request) {
     // Calculate new pricing
     const finalPlanType = new_plan_type || subscription.plan_type
     const finalDeviceCount = new_device_count || subscription.device_count
-    
+
     const basePrices = {
       monthly: 9900,
       yearly: 99900
     }
-    
+
     const extraDevicePrice = finalPlanType === 'monthly' ? 1000 : 10000
-    const newBasePrice = basePrices[finalPlanType]
+    const newBasePrice = basePrices[finalPlanType as "monthly" | "yearly"]
     const newTotalPrice = newBasePrice + ((finalDeviceCount - 1) * extraDevicePrice)
 
     // Handle free subscriptions
     if (subscription.square_subscription_id.startsWith('free_')) {
       await db.execute(
-        `UPDATE subscriptions 
+        `UPDATE subscriptions
          SET plan_type = ?,
              device_count = ?,
              base_price_cents = ?,
@@ -95,9 +99,9 @@ export async function POST(request: Request) {
         ordinal: 0,
         plan_phase_pricing: {
           pricing: {
-            price_money: { 
-              amount: newTotalPrice, 
-              currency: "USD" 
+            price_money: {
+              amount: newTotalPrice,
+              currency: "USD"
             }
           }
         }
@@ -125,24 +129,25 @@ export async function POST(request: Request) {
 
       const newSubscription = newSubResponse.data.subscription
 
-      // Update database
+      // Update database with new subscription details
       await db.execute(
-        `UPDATE subscriptions 
+        `UPDATE subscriptions
          SET square_subscription_id = ?,
              plan_type = ?,
              device_count = ?,
              base_price_cents = ?,
              total_price_cents = ?,
+             square_version = ?,
              updated_at = NOW()
          WHERE id = ?`,
         [
-          subscription.id,
-          JSON.stringify({
-            old_plan: subscription.plan_type,
-            new_plan: finalPlanType,
-            old_devices: subscription.device_count,
-            new_devices: finalDeviceCount
-          })
+          newSubscription.id,
+          finalPlanType,
+          finalDeviceCount,
+          newBasePrice,
+          newTotalPrice,
+          newSubscription.version,
+          subscription.id
         ]
       )
 
@@ -158,7 +163,7 @@ export async function POST(request: Request) {
 
     } catch (squareError: any) {
       console.error("Square API Error:", squareError.response?.data)
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: "Failed to update subscription",
         details: squareError.response?.data?.errors || squareError.message
       }, { status: 500 })
@@ -166,9 +171,9 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("Error updating subscription:", error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: "Failed to update subscription",
-      details: error.message 
+      details: error.message
     }, { status: 500 })
   }
 }
