@@ -1,4 +1,4 @@
-// src/app/subscription/manage/page.tsx - MINIMAL FIX
+// src/app/subscription/manage/page.tsx - WITH GUARANTEED INLINE STYLES
 'use client'
 
 import { useEffect, useState, Suspense } from 'react'
@@ -72,16 +72,36 @@ function ManagePageContent() {
         <Head>
           <title>ShulPad Subscription - Loading</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-          <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link rel="stylesheet" href="/safari-fallback.css" />
         </Head>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading subscription details...</p>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              border: '4px solid #e5e7eb',
+              borderTop: '4px solid #2563eb',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto 16px auto'
+            }}></div>
+            <p style={{ color: '#6b7280', fontSize: '16px' }}>Loading subscription details...</p>
           </div>
         </div>
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `
+        }} />
       </>
     )
   }
@@ -92,17 +112,48 @@ function ManagePageContent() {
         <Head>
           <title>ShulPad Subscription - No Active Subscription</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-          <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link rel="stylesheet" href="/safari-fallback.css" />
         </Head>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-          <div className="max-w-md w-full text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">No Active Subscription</h1>
-            <p className="text-gray-600 mb-8">{error || 'You don\'t have an active subscription.'}</p>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f9fafb',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        }}>
+          <div style={{ maxWidth: '448px', width: '100%', textAlign: 'center' }}>
+            <h1 style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: '#111827',
+              marginBottom: '16px'
+            }}>
+              No Active Subscription
+            </h1>
+            <p style={{
+              color: '#6b7280',
+              marginBottom: '32px',
+              fontSize: '16px',
+              lineHeight: '1.5'
+            }}>
+              {error || 'You don\'t have an active subscription.'}
+            </p>
             <a
               href={`/subscription/checkout?org_id=${merchantId}`}
-              className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              style={{
+                display: 'inline-block',
+                padding: '12px 24px',
+                backgroundColor: '#2563eb',
+                color: 'white',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontWeight: '500',
+                fontSize: '16px',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
             >
               Subscribe Now
             </a>
@@ -117,55 +168,101 @@ function ManagePageContent() {
       <Head>
         <title>ShulPad Subscription - Manage</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
         <meta name="format-detection" content="telephone=no" />
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link rel="stylesheet" href="/safari-fallback.css" />
       </Head>
       
-      <div className="min-h-screen bg-gray-50 py-12 px-4">
-        <div className="max-w-md mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#f9fafb',
+        padding: '48px 16px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}>
+        <div style={{ maxWidth: '448px', margin: '0 auto' }}>
+          <h1 style={{
+            fontSize: '30px',
+            fontWeight: 'bold',
+            color: '#111827',
+            marginBottom: '32px',
+            textAlign: 'center'
+          }}>
             Manage Subscription
           </h1>
           
-          <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+            overflow: 'hidden'
+          }}>
             {/* Subscription Status */}
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <div style={{ padding: '24px' }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                marginBottom: '16px',
+                color: '#111827'
+              }}>
                 Subscription Details
               </h2>
               
-              <div className="space-y-3">
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-600">Status</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
-                    subscription.status === 'active' 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-gray-100 text-gray-800'
-                  }`}>
+              <div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 0',
+                  borderBottom: '1px solid #f3f4f6'
+                }}>
+                  <span style={{ color: '#6b7280' }}>Status</span>
+                  <span style={{
+                    padding: '4px 8px',
+                    borderRadius: '9999px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    backgroundColor: subscription.status === 'active' ? '#dcfce7' : '#f3f4f6',
+                    color: subscription.status === 'active' ? '#166534' : '#374151'
+                  }}>
                     {subscription.status}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-600">Plan</span>
-                  <span className="font-medium capitalize">
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 0',
+                  borderBottom: '1px solid #f3f4f6'
+                }}>
+                  <span style={{ color: '#6b7280' }}>Plan</span>
+                  <span style={{ fontWeight: '500', textTransform: 'capitalize' }}>
                     {subscription.plan_type}
                   </span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-600">Devices</span>
-                  <span className="font-medium">{subscription.device_count}</span>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 0',
+                  borderBottom: '1px solid #f3f4f6'
+                }}>
+                  <span style={{ color: '#6b7280' }}>Devices</span>
+                  <span style={{ fontWeight: '500' }}>{subscription.device_count}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-600">Price</span>
-                  <span className="font-medium">
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 0',
+                  borderBottom: '1px solid #f3f4f6'
+                }}>
+                  <span style={{ color: '#6b7280' }}>Price</span>
+                  <span style={{ fontWeight: '500' }}>
                     ${subscription.total_price}/{subscription.plan_type === 'monthly' ? 'month' : 'year'}
                   </span>
                 </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-600">Next Billing</span>
-                  <span className="font-medium">
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 0'
+                }}>
+                  <span style={{ color: '#6b7280' }}>Next Billing</span>
+                  <span style={{ fontWeight: '500' }}>
                     {new Date(subscription.next_billing_date).toLocaleDateString()}
                   </span>
                 </div>
@@ -173,36 +270,96 @@ function ManagePageContent() {
             </div>
             
             {/* Payment Method */}
-            <div className="p-6 border-t border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <div style={{
+              padding: '24px',
+              borderTop: '1px solid #e5e7eb'
+            }}>
+              <h2 style={{
+                fontSize: '18px',
+                fontWeight: '600',
+                marginBottom: '16px',
+                color: '#111827'
+              }}>
                 Payment Method
               </h2>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className="w-12 h-8 bg-gray-100 rounded flex items-center justify-center text-xs font-mono mr-3">
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div style={{
+                    width: '48px',
+                    height: '32px',
+                    backgroundColor: '#f3f4f6',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '12px',
+                    fontFamily: 'monospace',
+                    marginRight: '12px'
+                  }}>
                     ****
                   </div>
-                  <span className="text-gray-600">
+                  <span style={{ color: '#6b7280' }}>
                     Card ending in {subscription.card_last_four}
                   </span>
                 </div>
-                <button className="text-blue-600 text-sm hover:text-blue-800 underline">
+                <button style={{
+                  color: '#2563eb',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}>
                   Update
                 </button>
               </div>
             </div>
             
             {/* Actions */}
-            <div className="p-6 border-t border-gray-200">
+            <div style={{
+              padding: '24px',
+              borderTop: '1px solid #e5e7eb'
+            }}>
               <button
                 onClick={() => router.push(`/subscription/checkout?org_id=${merchantId}&plan=${subscription.plan_type}&devices=${subscription.device_count}`)}
-                className="w-full mb-3 px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                style={{
+                  width: '100%',
+                  marginBottom: '12px',
+                  padding: '12px 16px',
+                  backgroundColor: '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
               >
                 Change Plan
               </button>
               <button
                 onClick={handleCancelSubscription}
-                className="w-full px-4 py-2 bg-white text-red-600 border border-red-600 rounded-lg font-medium hover:bg-red-50 transition-colors"
+                style={{
+                  width: '100%',
+                  padding: '8px 16px',
+                  backgroundColor: 'white',
+                  color: '#dc2626',
+                  border: '1px solid #dc2626',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'white'}
               >
                 Cancel Subscription
               </button>
@@ -210,10 +367,16 @@ function ManagePageContent() {
           </div>
           
           {/* Return to App */}
-          <div className="mt-8 text-center">
+          <div style={{
+            marginTop: '32px',
+            textAlign: 'center'
+          }}>
             <a
               href={`shulpad://subscription/manage?org_id=${merchantId}`}
-              className="text-blue-600 hover:text-blue-800 underline"
+              style={{
+                color: '#2563eb',
+                textDecoration: 'underline'
+              }}
             >
               Return to ShulPad
             </a>
@@ -227,11 +390,34 @@ function ManagePageContent() {
 export default function ManagePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#f9fafb',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            border: '4px solid #e5e7eb',
+            borderTop: '4px solid #2563eb',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px auto'
+          }}></div>
+          <p style={{ color: '#6b7280', fontSize: '16px' }}>Loading...</p>
         </div>
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `
+        }} />
       </div>
     }>
       <ManagePageContent />
