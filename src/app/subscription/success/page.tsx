@@ -24,39 +24,93 @@ function SuccessPageContent() {
         <title>ShulPad Subscription - Success</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
-        <script src="https://cdn.tailwindcss.com"></script>
       </Head>
       
-      <div className="min-h-screen bg-green-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full text-center">
-          <div className="mb-8">
-            <div className="mx-auto w-16 h-16 bg-green-500 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#f0fdf4',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}>
+        <div style={{ maxWidth: '448px', width: '100%', textAlign: 'center' }}>
+          <div style={{ marginBottom: '32px' }}>
+            <div style={{
+              margin: '0 auto',
+              width: '64px',
+              height: '64px',
+              backgroundColor: '#22c55e',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <svg 
+                style={{ width: '32px', height: '32px', color: 'white' }}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M5 13l4 4L19 7" 
+                />
               </svg>
             </div>
           </div>
           
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">
+          <h1 style={{
+            fontSize: '30px',
+            fontWeight: 'bold',
+            color: '#111827',
+            marginBottom: '16px'
+          }}>
             Subscription Activated!
           </h1>
           
-          <p className="text-gray-600 mb-8">
+          <p style={{
+            color: '#6b7280',
+            marginBottom: '32px',
+            fontSize: '16px',
+            lineHeight: '1.5'
+          }}>
             Your ShulPad subscription is now active. You can start using the kiosk immediately.
           </p>
           
-          <div className="space-y-4">
+          <div style={{ marginBottom: '16px' }}>
             <a
               href={`shulpad://subscription/success?org_id=${merchantId}&subscription_id=${subscriptionId}`}
-              className="block w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '12px 16px',
+                backgroundColor: '#2563eb',
+                color: 'white',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontWeight: '500',
+                fontSize: '16px',
+                transition: 'background-color 0.2s',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
             >
               Return to ShulPad
             </a>
-            
-            <p className="text-sm text-gray-500">
-              You'll be redirected automatically in a few seconds...
-            </p>
           </div>
+          
+          <p style={{
+            fontSize: '14px',
+            color: '#9ca3af'
+          }}>
+            You'll be redirected automatically in a few seconds...
+          </p>
         </div>
       </div>
     </>
@@ -70,13 +124,35 @@ export default function SuccessPage() {
         <Head>
           <title>ShulPad Subscription - Loading</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-          <script src="https://cdn.tailwindcss.com"></script>
         </Head>
-        <div className="min-h-screen bg-green-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading...</p>
+        <div style={{
+          minHeight: '100vh',
+          backgroundColor: '#f0fdf4',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              border: '4px solid #bbf7d0',
+              borderTop: '4px solid #22c55e',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto 16px auto'
+            }}></div>
+            <p style={{ color: '#6b7280', fontSize: '16px' }}>Loading...</p>
           </div>
+          <style dangerouslySetInnerHTML={{
+            __html: `
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            `
+          }} />
         </div>
       </>
     }>

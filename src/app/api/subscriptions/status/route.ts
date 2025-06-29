@@ -1,4 +1,4 @@
-// app/api/subscriptions/status/route.ts - ENHANCED WITH GRACE PERIOD MESSAGING
+// app/api/subscriptions/status/route.ts - ENHANCED WITH CLEAR CANCELLATION STATUS
 import { NextResponse } from 'next/server';
 import { createClient } from "@/lib/db";
 import axios from 'axios';
@@ -15,75 +15,126 @@ function mapSquareStatus(status: string): string {
   }
 }
 
-function calculateGracePeriodMessage(subscription: any, serviceEndsDate: string | null): { 
-  canUseKiosk: boolean, 
-  gracePeriodEnds: string | null, 
+// NEW: Enhanced status analysis that considers cancellation timing
+function analyzeSubscriptionStatus(subscription: any, squareSubscription?: any) {
+  const now = new Date();
+  const isSquareCanceled = squareSubscription?.status === 'CANCELED';
+  const localStatus = subscription.status;
+  
+  // Determine actual service end date
+  const serviceEndsDate = squareSubscription?.charged_through_date || 
+                         squareSubscription?.canceled_date ||
+                         subscription.current_period_end ||
+                         subscription.canceled_at;
+  
+  const serviceEndDate = serviceEndsDate ? new Date(serviceEndsDate) : null;
+  const isServiceExpired = serviceEndDate ? now > serviceEndDate : false;
+  
+  // Determine final status and kiosk access
+  let finalStatus = localStatus;
+  let canUseKiosk = false;
+  let statusReason = '';
+  
+  if (isSquareCanceled || localStatus === 'canceled') {
+    if (isServiceExpired) {
+      finalStatus = 'canceled';
+      canUseKiosk = false;
+      statusReason = 'subscription_expired';
+    } else if (serviceEndDate) {
+      finalStatus = 'canceled'; // Still marked as canceled
+      canUseKiosk = true;  // But still functional
+      statusReason = 'canceled_but_active';
+    } else {
+      finalStatus = 'canceled';
+      canUseKiosk = false;
+      statusReason = 'canceled_immediate';
+    }
+  } else if (localStatus === 'active') {
+    finalStatus = 'active';
+    canUseKiosk = true;
+    statusReason = 'fully_active';
+  } else if (localStatus === 'paused') {
+    finalStatus = 'paused';
+    canUseKiosk = false;
+    statusReason = 'subscription_paused';
+  } else {
+    finalStatus = localStatus;
+    canUseKiosk = false;
+    statusReason = 'unknown_status';
+  }
+  
+  return {
+    finalStatus,
+    canUseKiosk,
+    statusReason,
+    serviceEndsDate,
+    isServiceExpired,
+    isCanceledButActive: statusReason === 'canceled_but_active'
+  };
+}
+
+function calculateGracePeriodMessage(analysis: any): { 
   message: string | null,
   urgencyLevel: 'none' | 'warning' | 'critical'
 } {
-  if (!serviceEndsDate) {
-    return { canUseKiosk: false, gracePeriodEnds: null, message: null, urgencyLevel: 'none' }
+  const { statusReason, serviceEndsDate, isCanceledButActive } = analysis;
+  
+  if (!isCanceledButActive || !serviceEndsDate) {
+    return { message: null, urgencyLevel: 'none' };
   }
 
-  const now = new Date()
-  const endsDate = new Date(serviceEndsDate)
-  const daysRemaining = Math.ceil((endsDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  const now = new Date();
+  const endsDate = new Date(serviceEndsDate);
+  const daysRemaining = Math.ceil((endsDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
   if (daysRemaining <= 0) {
     return {
-      canUseKiosk: false,
-      gracePeriodEnds: null,
       message: "Your subscription has expired. Resubscribe now to restore access to your donation kiosk.",
       urgencyLevel: 'critical'
-    }
+    };
   }
 
-  let message: string
-  let urgencyLevel: 'none' | 'warning' | 'critical'
+  let message: string;
+  let urgencyLevel: 'none' | 'warning' | 'critical';
 
   if (daysRemaining <= 3) {
-    urgencyLevel = 'critical'
-    message = `Your subscription ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}. Resubscribe now to avoid service interruption.`
+    urgencyLevel = 'critical';
+    message = `Your cancelled subscription ends in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}. Reactivate now to avoid service interruption.`;
   } else if (daysRemaining <= 7) {
-    urgencyLevel = 'warning'
-    message = `Your subscription ends in ${daysRemaining} days on ${formatDate(serviceEndsDate)}. Resubscribe to continue your service.`
+    urgencyLevel = 'warning';
+    message = `Your cancelled subscription ends in ${daysRemaining} days on ${formatDate(serviceEndsDate)}. Reactivate to continue your service.`;
   } else {
-    urgencyLevel = 'none'
-    message = `Your subscription is cancelled and will end on ${formatDate(serviceEndsDate)}. You can resubscribe anytime before then.`
+    urgencyLevel = 'warning';
+    message = `Your subscription was cancelled and will end on ${formatDate(serviceEndsDate)}. You can reactivate anytime before then.`;
   }
 
-  return {
-    canUseKiosk: true,
-    gracePeriodEnds: serviceEndsDate,
-    message,
-    urgencyLevel
-  }
+  return { message, urgencyLevel };
 }
 
 function formatDate(dateString: string): string {
   try {
-    const date = new Date(dateString)
+    const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       weekday: 'long',
       year: 'numeric', 
       month: 'long', 
       day: 'numeric' 
-    })
+    });
   } catch {
-    return dateString
+    return dateString;
   }
 }
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const merchant_id = searchParams.get('merchant_id')
+    const { searchParams } = new URL(request.url);
+    const merchant_id = searchParams.get('merchant_id');
 
     if (!merchant_id) {
-      return NextResponse.json({ error: "Missing merchant_id" }, { status: 400 })
+      return NextResponse.json({ error: "Missing merchant_id" }, { status: 400 });
     }
 
-    const db = createClient()
+    const db = createClient();
 
     // Get subscription with Square connection info
     const result = await db.execute(
@@ -111,8 +162,10 @@ export async function GET(request: Request) {
         grace_period_ends: null,
         message: "No subscription found. Subscribe now to start accepting donations.",
         urgency_level: 'none',
+        status_reason: 'no_subscription',
+        is_canceled_but_active: false,
         error: null
-      })
+      });
     }
 
     const subscription = result.rows[0] as any;
@@ -138,13 +191,15 @@ export async function GET(request: Request) {
         grace_period_ends: subscription.canceled_at,
         message: canUseKiosk ? null : "Your free subscription has ended. Upgrade to a paid plan to continue using the kiosk.",
         urgency_level: canUseKiosk ? 'none' : 'warning',
+        status_reason: canUseKiosk ? 'free_active' : 'free_expired',
+        is_canceled_but_active: false,
         error: null
-      })
+      });
     }
 
     // For paid subscriptions, sync with Square
-    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
-    const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production";
+    const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com";
 
     try {
       const squareResponse = await axios.get(
@@ -155,96 +210,89 @@ export async function GET(request: Request) {
             "Authorization": `Bearer ${subscription.access_token}`
           }
         }
-      )
+      );
 
-      const squareSubscription = squareResponse.data.subscription
-      const finalStatus = mapSquareStatus(squareSubscription.status)
-
-      // Determine service end date
-      const serviceEndsDate = squareSubscription.charged_through_date || 
-                             squareSubscription.canceled_date ||
-                             subscription.current_period_end
-
-      // Calculate access and messaging
-      const { canUseKiosk, gracePeriodEnds, message, urgencyLevel } = 
-        finalStatus === 'canceled' 
-          ? calculateGracePeriodMessage(subscription, serviceEndsDate)
-          : { canUseKiosk: finalStatus === 'active' || finalStatus === 'paused', gracePeriodEnds: null, message: null, urgencyLevel: 'none' as const }
-
+      const squareSubscription = squareResponse.data.subscription;
+      
+      // NEW: Enhanced status analysis
+      const analysis = analyzeSubscriptionStatus(subscription, squareSubscription);
+      const { message, urgencyLevel } = calculateGracePeriodMessage(analysis);
+      
       // Update local status if changed
-      if (finalStatus !== subscription.status) {
+      if (analysis.finalStatus !== subscription.status) {
         await db.execute(
           `UPDATE subscriptions
            SET status = ?, 
                current_period_end = ?,
                updated_at = NOW()
            WHERE id = ?`,
-          [finalStatus, serviceEndsDate, subscription.id]
-        )
+          [analysis.finalStatus, analysis.serviceEndsDate, subscription.id]
+        );
       }
 
       return NextResponse.json({
         subscription: {
           id: subscription.square_subscription_id,
-          status: finalStatus,
+          status: analysis.finalStatus,
           plan_type: subscription.plan_type,
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
-          next_billing_date: squareSubscription.charged_through_date || serviceEndsDate,
+          next_billing_date: analysis.isCanceledButActive ? null : (squareSubscription.charged_through_date || analysis.serviceEndsDate),
           card_last_four: squareSubscription.card_id ? '****' : null,
           start_date: squareSubscription.start_date || subscription.created_at,
           canceled_date: squareSubscription.canceled_date || subscription.canceled_at,
-          service_ends_date: serviceEndsDate
+          service_ends_date: analysis.serviceEndsDate
         },
-        can_use_kiosk: canUseKiosk,
-        grace_period_ends: gracePeriodEnds,
+        can_use_kiosk: analysis.canUseKiosk,
+        grace_period_ends: analysis.isCanceledButActive ? analysis.serviceEndsDate : null,
         message: message,
         urgency_level: urgencyLevel,
+        status_reason: analysis.statusReason,
+        is_canceled_but_active: analysis.isCanceledButActive,
         error: null
-      })
+      });
 
     } catch (squareError: any) {
-      console.error("Square API Error:", squareError.response?.data)
+      console.error("Square API Error:", squareError.response?.data);
       
-      // Fallback to cached data with appropriate messaging
-      const isLocalCanceled = subscription.status === 'canceled'
-      const serviceEndsDate = subscription.current_period_end || subscription.canceled_at
-      
-      const { canUseKiosk, gracePeriodEnds, message, urgencyLevel } = 
-        isLocalCanceled && serviceEndsDate
-          ? calculateGracePeriodMessage(subscription, serviceEndsDate)
-          : { canUseKiosk: subscription.status === 'active', gracePeriodEnds: null, message: "Service status temporarily unavailable. Using cached information.", urgencyLevel: 'none' as const }
+      // Fallback to cached data with enhanced analysis
+      const analysis = analyzeSubscriptionStatus(subscription);
+      const { message, urgencyLevel } = calculateGracePeriodMessage(analysis);
       
       return NextResponse.json({
         subscription: {
           id: subscription.square_subscription_id,
-          status: subscription.status,
+          status: analysis.finalStatus,
           plan_type: subscription.plan_type,
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
-          next_billing_date: serviceEndsDate,
+          next_billing_date: analysis.serviceEndsDate,
           card_last_four: null,
           start_date: subscription.created_at,
           canceled_date: subscription.canceled_at,
-          service_ends_date: serviceEndsDate
+          service_ends_date: analysis.serviceEndsDate
         },
-        can_use_kiosk: canUseKiosk,
-        grace_period_ends: gracePeriodEnds,
-        message: message,
+        can_use_kiosk: analysis.canUseKiosk,
+        grace_period_ends: analysis.isCanceledButActive ? analysis.serviceEndsDate : null,
+        message: message || "Service status temporarily unavailable. Using cached information.",
         urgency_level: urgencyLevel,
+        status_reason: analysis.statusReason,
+        is_canceled_but_active: analysis.isCanceledButActive,
         error: null
-      })
+      });
     }
 
   } catch (error: any) {
-    console.error("Error fetching subscription status:", error)
+    console.error("Error fetching subscription status:", error);
     return NextResponse.json({
       subscription: null,
       can_use_kiosk: false,
       grace_period_ends: null,
       message: null,
       urgency_level: 'none',
+      status_reason: 'error',
+      is_canceled_but_active: false,
       error: "Unable to check subscription status. Please try again."
-    }, { status: 500 })
+    }, { status: 500 });
   }
 }
