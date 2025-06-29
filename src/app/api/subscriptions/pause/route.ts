@@ -1,52 +1,103 @@
 // ==========================================
-// 5. PAUSE SUBSCRIPTION ENDPOINT
+// 4. PAUSE SUBSCRIPTION
 // app/api/subscriptions/pause/route.ts
 // ==========================================
-import { NextResponse, type NextRequest } from "next/server"
-import axios from "axios"
-import { createClient } from "@/lib/db"
-
 export async function POST(request: Request) {
   try {
     const body = await request.json()
     const { merchant_id, pause_reason = "Customer request" } = body
 
+    if (!merchant_id) {
+      return NextResponse.json({ error: "Missing merchant_id" }, { status: 400 })
+    }
+
     const db = createClient()
-    const result = await db.execute(`
-      SELECT s.square_subscription_id, sc.access_token 
-      FROM subscriptions s
-      JOIN square_connections sc ON s.merchant_id = sc.merchant_id
-      WHERE s.merchant_id = ? AND s.status = 'active'
-    `, [merchant_id])
+
+    // Get active subscription
+    const result = await db.execute(
+      `SELECT s.*, sc.access_token 
+       FROM subscriptions s
+       JOIN square_connections sc ON s.merchant_id = sc.merchant_id
+       WHERE s.merchant_id = ? AND s.status = 'active'
+       ORDER BY s.created_at DESC 
+       LIMIT 1`,
+      [merchant_id]
+    )
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "No active subscription found" }, { status: 404 })
     }
 
-    const { square_subscription_id, access_token } = result.rows[0]
+    const subscription = result.rows[0]
+
+    // Handle free subscriptions
+    if (subscription.square_subscription_id.startsWith('free_')) {
+      await db.execute(
+        `UPDATE subscriptions 
+         SET status = 'paused', updated_at = NOW()
+         WHERE id = ?`,
+        [subscription.id]
+      )
+
+      return NextResponse.json({
+        success: true,
+        subscription: {
+          id: subscription.square_subscription_id,
+          status: 'paused'
+        }
+      })
+    }
+
+    // Pause in Square
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production"
     const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com"
 
-    const pauseResponse = await axios.post(
-      `https://connect.${SQUARE_DOMAIN}/v2/subscriptions/${square_subscription_id}/pause`,
-      { pause_reason },
-      {
-        headers: {
-          "Square-Version": "2025-06-18",
-          "Authorization": `Bearer ${access_token}`
+    try {
+      const pauseResponse = await axios.post(
+        `https://connect.${SQUARE_DOMAIN}/v2/subscriptions/${subscription.square_subscription_id}/pause`,
+        { pause_reason },
+        {
+          headers: {
+            "Square-Version": "2025-06-18",
+            "Authorization": `Bearer ${subscription.access_token}`
+          }
         }
-      }
-    )
+      )
 
-    await db.execute(`
-      UPDATE subscriptions SET status = 'paused', updated_at = NOW()
-      WHERE square_subscription_id = ?
-    `, [square_subscription_id])
+      // Update local database
+      await db.execute(
+        `UPDATE subscriptions 
+         SET status = 'paused', updated_at = NOW()
+         WHERE id = ?`,
+        [subscription.id]
+      )
 
-    return NextResponse.json({ success: true, subscription: pauseResponse.data.subscription })
+      // Log pause event
+      await db.execute(
+        `INSERT INTO subscription_events 
+         (subscription_id, event_type, event_data, created_at)
+         VALUES (?, 'paused', ?, NOW())`,
+        [subscription.id, JSON.stringify({ reason: pause_reason })]
+      )
+
+      return NextResponse.json({
+        success: true,
+        subscription: pauseResponse.data.subscription
+      })
+
+    } catch (squareError: any) {
+      console.error("Square API Error:", squareError.response?.data)
+      return NextResponse.json({ 
+        error: "Failed to pause subscription",
+        details: squareError.response?.data?.errors || squareError.message
+      }, { status: 500 })
+    }
 
   } catch (error: any) {
     console.error("Error pausing subscription:", error)
-    return NextResponse.json({ error: "Failed to pause subscription" }, { status: 500 })
+    return NextResponse.json({ 
+      error: "Failed to pause subscription",
+      details: error.message 
+    }, { status: 500 })
   }
 }
