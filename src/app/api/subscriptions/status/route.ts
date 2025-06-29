@@ -1,4 +1,4 @@
-// src/app/api/subscriptions/status/route.ts - COMPLETE MERCHANT_ID VERSION
+// src/app/api/subscriptions/status/route.ts - FIXED TO DETECT PENDING CANCELLATION
 import { NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
@@ -6,7 +6,7 @@ import { createClient } from "@/lib/db"
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const merchant_id = searchParams.get('merchant_id')  // ✅ CHANGED: Using merchant_id
+    const merchant_id = searchParams.get('merchant_id')
 
     if (!merchant_id) {
       return NextResponse.json({ error: "Missing merchant_id" }, { status: 400 })
@@ -14,12 +14,12 @@ export async function GET(request: Request) {
 
     const db = createClient()
 
-    // ✅ CHANGED: Get subscription by merchant_id (primary key)
+    // Get subscription by merchant_id (primary key)
     const result = await db.execute(`
       SELECT s.*, sc.access_token 
       FROM subscriptions s
       JOIN square_connections sc ON s.merchant_id = sc.merchant_id
-      WHERE s.merchant_id = ? AND s.status IN ('active', 'pending', 'paused', 'grace_period')
+      WHERE s.merchant_id = ? AND s.status IN ('active', 'pending', 'paused', 'grace_period', 'pending_cancellation')
       ORDER BY s.created_at DESC 
       LIMIT 1
     `, [merchant_id])
@@ -51,14 +51,34 @@ export async function GET(request: Request) {
       )
 
       const squareSubscription = squareResponse.data.subscription
-      const currentStatus = mapSquareStatusToOurStatus(squareSubscription.status)
+      let currentStatus = mapSquareStatusToOurStatus(squareSubscription.status)
 
-      // ✅ CRITICAL: Grace period logic (as per original plan)
+      // ✅ CRITICAL FIX: Check for pending cancellation
       let finalStatus = currentStatus
       let gracePeriodEnd = null
       let canUseKiosk = false
+      let cancelDate = null
 
-      if (currentStatus === 'active') {
+      // 🔥 NEW LOGIC: Detect pending cancellation
+      if (squareSubscription.canceled_date && currentStatus === 'active') {
+        finalStatus = 'pending_cancellation'
+        cancelDate = squareSubscription.canceled_date
+        canUseKiosk = true // Still works until cancel date
+        
+        console.log("🚨 Detected pending cancellation:", {
+          subscription_id: squareSubscription.id,
+          canceled_date: cancelDate,
+          current_square_status: squareSubscription.status
+        })
+
+        // Update our database
+        await db.execute(`
+          UPDATE subscriptions 
+          SET status = 'pending_cancellation', canceled_at = ?, updated_at = NOW()
+          WHERE merchant_id = ?
+        `, [cancelDate, merchant_id])
+
+      } else if (currentStatus === 'active') {
         canUseKiosk = true
         // Clear any existing grace period
         await db.execute(`
@@ -66,6 +86,7 @@ export async function GET(request: Request) {
           SET status = 'active', grace_period_start = NULL, updated_at = NOW()
           WHERE merchant_id = ?
         `, [merchant_id])
+        
       } else if (currentStatus === 'pending' && subscription.grace_period_start) {
         // Check if still in grace period
         const gracePeriodStart = new Date(subscription.grace_period_start)
@@ -100,29 +121,30 @@ export async function GET(request: Request) {
         ])
       }
 
-      // ✅ CHANGED: Return merchant_id in response
       return NextResponse.json({
         subscription: {
           id: squareSubscription.id,
-          merchant_id: merchant_id,  // ✅ Include merchant_id
+          merchant_id: merchant_id,
           status: finalStatus,
           plan_type: subscription.plan_type,
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
           next_billing_date: squareSubscription.charged_through_date,
           card_last_four: squareSubscription.card_id ? "****" : null,
-          start_date: squareSubscription.start_date
+          start_date: squareSubscription.start_date,
+          canceled_date: cancelDate // ✅ NEW: Include cancel date
         },
         can_use_kiosk: canUseKiosk,
         grace_period_ends: gracePeriodEnd,
-        message: getStatusMessage(finalStatus, canUseKiosk, gracePeriodEnd)
+        canceled_on: cancelDate, // ✅ NEW: When subscription will end
+        message: getStatusMessage(finalStatus, canUseKiosk, gracePeriodEnd, cancelDate)
       })
 
     } catch (squareError) {
       // If Square API fails, use cached data with grace period logic
       console.warn("Failed to fetch from Square, returning cached data:", squareError)
       
-      let canUseKiosk = subscription.status === 'active'
+      let canUseKiosk = subscription.status === 'active' || subscription.status === 'pending_cancellation'
       let gracePeriodEnd = null
       let finalStatus = subscription.status
 
@@ -150,11 +172,13 @@ export async function GET(request: Request) {
           total_price: subscription.total_price_cents / 100,
           next_billing_date: subscription.current_period_end,
           card_last_four: "****",
-          start_date: subscription.current_period_start
+          start_date: subscription.current_period_start,
+          canceled_date: subscription.canceled_at
         },
         can_use_kiosk: canUseKiosk,
         grace_period_ends: gracePeriodEnd,
-        message: getStatusMessage(finalStatus, canUseKiosk, gracePeriodEnd) + " (cached)"
+        canceled_on: subscription.canceled_at,
+        message: getStatusMessage(finalStatus, canUseKiosk, gracePeriodEnd, subscription.canceled_at) + " (cached)"
       })
     }
 
@@ -180,8 +204,12 @@ function mapSquareStatusToOurStatus(squareStatus: string): string {
   }
 }
 
-function getStatusMessage(status: string, canUseKiosk: boolean, gracePeriodEnd: string | null): string {
-  if (status === 'active') {
+function getStatusMessage(status: string, canUseKiosk: boolean, gracePeriodEnd: string | null, cancelDate: string | null): string {
+  if (status === 'pending_cancellation' && cancelDate) {
+    const cancelDateObj = new Date(cancelDate)
+    const daysUntilCancel = Math.ceil((cancelDateObj.getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000))
+    return `Subscription ends on ${cancelDateObj.toLocaleDateString()} (${daysUntilCancel} days)`
+  } else if (status === 'active') {
     return "Subscription active"
   } else if (status === 'grace_period' && gracePeriodEnd) {
     const daysLeft = Math.ceil((new Date(gracePeriodEnd).getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000))
