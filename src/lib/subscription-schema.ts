@@ -4,14 +4,19 @@ export async function initializeSubscriptionSchema() {
   const db = createClient()
   
   try {
-    // Subscriptions table
+    // Subscriptions table - UPDATED with missing columns
     await db.execute(`
       CREATE TABLE IF NOT EXISTS subscriptions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         organization_id VARCHAR(255) NOT NULL,
         square_subscription_id VARCHAR(255) UNIQUE,
+        square_customer_id VARCHAR(255) NULL,
+        square_card_id VARCHAR(255) NULL,
+        square_version INT DEFAULT 0,
         plan_type ENUM('monthly', 'yearly') NOT NULL,
         device_count INT DEFAULT 1,
+        promo_code VARCHAR(50) NULL,
+        promo_discount_cents INT DEFAULT 0,
         base_price_cents INT NOT NULL,
         total_price_cents INT NOT NULL,
         status ENUM('pending', 'active', 'paused', 'canceled', 'deactivated') DEFAULT 'pending',
@@ -19,13 +24,13 @@ export async function initializeSubscriptionSchema() {
         current_period_start TIMESTAMP NULL,
         current_period_end TIMESTAMP NULL,
         canceled_at TIMESTAMP NULL,
-        promo_code VARCHAR(50) NULL,
-        promo_discount_cents INT DEFAULT 0,
+        grace_period_start TIMESTAMP NULL,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW() ON UPDATE NOW(),
         INDEX idx_org_id (organization_id),
         INDEX idx_square_sub_id (square_subscription_id),
-        INDEX idx_status (status)
+        INDEX idx_status (status),
+        INDEX idx_promo_code (promo_code)
       )
     `)
 
@@ -74,6 +79,18 @@ export async function initializeSubscriptionSchema() {
         extra_device_price_cents INT NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW() ON UPDATE NOW()
+      )
+    `)
+
+    // Subscription events table (for audit trail)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS subscription_events (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        subscription_id INT NOT NULL,
+        event_type VARCHAR(50) NOT NULL,
+        event_data JSON,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        INDEX idx_subscription_id (subscription_id)
       )
     `)
 
