@@ -1,4 +1,4 @@
-// src/app/subscription/manage/page.tsx - FIXED VERSION
+// src/app/subscription/manage/page.tsx - MINIMAL FIX
 'use client'
 
 import { useEffect, useState, Suspense } from 'react'
@@ -28,43 +28,43 @@ function ManagePageContent() {
     fetchSubscriptionDetails()
   }, [merchantId])
   
- async function fetchSubscriptionDetails() {
-  try {
-    const response = await fetch(`/api/subscriptions/status?merchant_id=${merchantId}`) // ✅ Changed from organization_id
-    if (!response.ok) throw new Error('Failed to fetch subscription')
-    
-    const data = await response.json()
-    if (data.subscription) {
-      setSubscription(data.subscription)
-    } else {
-      setError('No active subscription found')
+  async function fetchSubscriptionDetails() {
+    try {
+      const response = await fetch(`/api/subscriptions/status?merchant_id=${merchantId}`)
+      if (!response.ok) throw new Error('Failed to fetch subscription')
+      
+      const data = await response.json()
+      if (data.subscription) {
+        setSubscription(data.subscription)
+      } else {
+        setError('No active subscription found')
+      }
+    } catch (err) {
+      setError('Failed to load subscription details')
+    } finally {
+      setIsLoading(false)
     }
-  } catch (err) {
-    setError('Failed to load subscription details')
-  } finally {
-    setIsLoading(false)
   }
-}
   
   async function handleCancelSubscription() {
-  if (!confirm('Are you sure you want to cancel your subscription?'))
-    return
-    
-  try {
-    const response = await fetch('/api/subscriptions/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ merchant_id: merchantId }) // ✅ Changed from organization_id
-    })
-    
-    if (!response.ok) throw new Error('Failed to cancel subscription')
-    
-    alert('Subscription cancelled successfully')
-    router.push(`shulpad://subscription/cancelled?merchant_id=${merchantId}`) // ✅ Also update URL param
-  } catch (err) {
-    alert('Failed to cancel subscription')
+    if (!confirm('Are you sure you want to cancel your subscription?'))
+      return
+      
+    try {
+      const response = await fetch('/api/subscriptions/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchant_id: merchantId })
+      })
+      
+      if (!response.ok) throw new Error('Failed to cancel subscription')
+      
+      alert('Subscription cancelled successfully')
+      router.push(`shulpad://subscription/cancelled?merchant_id=${merchantId}`)
+    } catch (err) {
+      alert('Failed to cancel subscription')
+    }
   }
-}
   
   if (isLoading) {
     return (
@@ -73,26 +73,13 @@ function ManagePageContent() {
           <title>ShulPad Subscription - Loading</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
           <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+          <script src="https://cdn.tailwindcss.com"></script>
           <link rel="stylesheet" href="/safari-fallback.css" />
         </Head>
-        <div style={{
-          minHeight: '100vh',
-          backgroundColor: '#f9fafb',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              animation: 'spin 1s linear infinite',
-              borderRadius: '50%',
-              height: '48px',
-              width: '48px',
-              borderTop: '2px solid #2563eb',
-              borderRight: '2px solid transparent',
-              margin: '0 auto'
-            }}></div>
-            <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading subscription details...</p>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading subscription details...</p>
           </div>
         </div>
       </>
@@ -106,38 +93,16 @@ function ManagePageContent() {
           <title>ShulPad Subscription - No Active Subscription</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
           <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+          <script src="https://cdn.tailwindcss.com"></script>
           <link rel="stylesheet" href="/safari-fallback.css" />
         </Head>
-        <div style={{
-          minHeight: '100vh',
-          backgroundColor: '#f9fafb',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px'
-        }}>
-          <div style={{ maxWidth: '448px', width: '100%', textAlign: 'center' }}>
-            <h1 style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: '#111827',
-              marginBottom: '16px'
-            }}>No Active Subscription</h1>
-            <p style={{
-              color: '#6b7280',
-              marginBottom: '32px'
-            }}>{error || 'You don\'t have an active subscription.'}</p>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+          <div className="max-w-md w-full text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">No Active Subscription</h1>
+            <p className="text-gray-600 mb-8">{error || 'You don\'t have an active subscription.'}</p>
             <a
               href={`/subscription/checkout?org_id=${merchantId}`}
-              style={{
-                display: 'inline-block',
-                padding: '12px 24px',
-                backgroundColor: '#2563eb',
-                color: 'white',
-                borderRadius: '8px',
-                textDecoration: 'none',
-                fontWeight: '500'
-              }}
+              className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
               Subscribe Now
             </a>
@@ -154,135 +119,53 @@ function ManagePageContent() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
         <meta name="format-detection" content="telephone=no" />
+        <script src="https://cdn.tailwindcss.com"></script>
         <link rel="stylesheet" href="/safari-fallback.css" />
-        <style dangerouslySetInnerHTML={{
-          __html: `
-            .status-badge {
-              padding: 4px 8px;
-              border-radius: 9999px;
-              font-size: 12px;
-              font-weight: 600;
-              text-transform: uppercase;
-            }
-            .status-active {
-              background-color: #dcfce7;
-              color: #166534;
-            }
-            .status-inactive {
-              background-color: #f3f4f6;
-              color: #374151;
-            }
-            .detail-row {
-              display: flex;
-              justify-content: space-between;
-              padding: 8px 0;
-              border-bottom: 1px solid #f3f4f6;
-            }
-            .detail-row:last-child {
-              border-bottom: none;
-            }
-            .detail-label {
-              color: #6b7280;
-            }
-            .detail-value {
-              font-weight: 500;
-            }
-            .payment-method {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-            }
-            .card-icon {
-              width: 48px;
-              height: 32px;
-              background-color: #f3f4f6;
-              border-radius: 4px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 12px;
-              font-family: monospace;
-              margin-right: 12px;
-            }
-            .btn-secondary {
-              background-color: white;
-              color: #dc2626;
-              border: 1px solid #dc2626;
-              padding: 8px 16px;
-              border-radius: 6px;
-              cursor: pointer;
-              font-size: 16px;
-              font-weight: 500;
-              width: 100%;
-              margin-top: 12px;
-            }
-            .btn-secondary:hover {
-              background-color: #fef2f2;
-            }
-            .actions-section {
-              padding: 24px;
-              border-top: 1px solid #e5e7eb;
-            }
-          `
-        }} />
       </Head>
       
-      <div className="min-h-screen" style={{
-        minHeight: '100vh',
-        backgroundColor: '#f9fafb',
-        padding: '48px 16px'
-      }}>
-        <div style={{ maxWidth: '448px', margin: '0 auto' }}>
-          <h1 style={{
-            fontSize: '30px',
-            fontWeight: 'bold',
-            color: '#111827',
-            marginBottom: '32px',
-            textAlign: 'center'
-          }}>
+      <div className="min-h-screen bg-gray-50 py-12 px-4">
+        <div className="max-w-md mx-auto">
+          <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
             Manage Subscription
           </h1>
           
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-            overflow: 'hidden'
-          }}>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
             {/* Subscription Status */}
-            <div style={{ padding: '24px' }}>
-              <h2 style={{
-                fontSize: '18px',
-                fontWeight: '600',
-                marginBottom: '16px'
-              }}>Subscription Details</h2>
+            <div className="p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Subscription Details
+              </h2>
               
-              <div>
-                <div className="detail-row">
-                  <span className="detail-label">Status</span>
-                  <span className={`status-badge ${subscription.status === 'active' ? 'status-active' : 'status-inactive'}`}>
+              <div className="space-y-3">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Status</span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
+                    subscription.status === 'active' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-gray-100 text-gray-800'
+                  }`}>
                     {subscription.status}
                   </span>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Plan</span>
-                  <span className="detail-value" style={{ textTransform: 'capitalize' }}>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Plan</span>
+                  <span className="font-medium capitalize">
                     {subscription.plan_type}
                   </span>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Devices</span>
-                  <span className="detail-value">{subscription.device_count}</span>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Devices</span>
+                  <span className="font-medium">{subscription.device_count}</span>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Price</span>
-                  <span className="detail-value">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Price</span>
+                  <span className="font-medium">
                     ${subscription.total_price}/{subscription.plan_type === 'monthly' ? 'month' : 'year'}
                   </span>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Next Billing</span>
-                  <span className="detail-value">
+                <div className="flex justify-between py-2">
+                  <span className="text-gray-600">Next Billing</span>
+                  <span className="font-medium">
                     {new Date(subscription.next_billing_date).toLocaleDateString()}
                   </span>
                 </div>
@@ -290,57 +173,36 @@ function ManagePageContent() {
             </div>
             
             {/* Payment Method */}
-            <div style={{
-              padding: '24px',
-              borderTop: '1px solid #e5e7eb'
-            }}>
-              <h2 style={{
-                fontSize: '18px',
-                fontWeight: '600',
-                marginBottom: '16px'
-              }}>Payment Method</h2>
-              <div className="payment-method">
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <div className="card-icon">****</div>
-                  <span style={{ color: '#6b7280' }}>
+            <div className="p-6 border-t border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Payment Method
+              </h2>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-12 h-8 bg-gray-100 rounded flex items-center justify-center text-xs font-mono mr-3">
+                    ****
+                  </div>
+                  <span className="text-gray-600">
                     Card ending in {subscription.card_last_four}
                   </span>
                 </div>
-                <button style={{
-                  color: '#2563eb',
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  textDecoration: 'underline'
-                }}>
+                <button className="text-blue-600 text-sm hover:text-blue-800 underline">
                   Update
                 </button>
               </div>
             </div>
             
             {/* Actions */}
-            <div className="actions-section">
+            <div className="p-6 border-t border-gray-200">
               <button
                 onClick={() => router.push(`/subscription/checkout?org_id=${merchantId}&plan=${subscription.plan_type}&devices=${subscription.device_count}`)}
-                className="btn btn-primary"
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  backgroundColor: '#2563eb',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '16px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
+                className="w-full mb-3 px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
               >
                 Change Plan
               </button>
               <button
                 onClick={handleCancelSubscription}
-                className="btn-secondary"
+                className="w-full px-4 py-2 bg-white text-red-600 border border-red-600 rounded-lg font-medium hover:bg-red-50 transition-colors"
               >
                 Cancel Subscription
               </button>
@@ -348,16 +210,10 @@ function ManagePageContent() {
           </div>
           
           {/* Return to App */}
-          <div style={{
-            marginTop: '32px',
-            textAlign: 'center'
-          }}>
+          <div className="mt-8 text-center">
             <a
               href={`shulpad://subscription/manage?org_id=${merchantId}`}
-              style={{
-                color: '#2563eb',
-                textDecoration: 'underline'
-              }}
+              className="text-blue-600 hover:text-blue-800 underline"
             >
               Return to ShulPad
             </a>
@@ -371,24 +227,10 @@ function ManagePageContent() {
 export default function ManagePage() {
   return (
     <Suspense fallback={
-      <div style={{
-        minHeight: '100vh',
-        backgroundColor: '#f9fafb',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            animation: 'spin 1s linear infinite',
-            borderRadius: '50%',
-            height: '48px',
-            width: '48px',
-            borderTop: '2px solid #2563eb',
-            borderRight: '2px solid transparent',
-            margin: '0 auto'
-          }}></div>
-          <p style={{ marginTop: '16px', color: '#6b7280' }}>Loading...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     }>
