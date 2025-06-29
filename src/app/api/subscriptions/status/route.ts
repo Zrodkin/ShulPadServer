@@ -1,4 +1,4 @@
-// src/app/api/subscriptions/status/route.ts - MERCHANT_ID VERSION
+// src/app/api/subscriptions/status/route.ts - COMPLETE MERCHANT_ID VERSION
 import { NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"

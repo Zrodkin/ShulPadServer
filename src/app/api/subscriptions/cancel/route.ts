@@ -10,23 +10,23 @@ import { createClient } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { organization_id } = body
+    const { merchant_id } = body
 
-    if (!organization_id) {
-      return NextResponse.json({ error: "Missing organization_id" }, { status: 400 })
+    if (!merchant_id) {
+      return NextResponse.json({ error: "Missing merchant_id" }, { status: 400 })
     }
 
     const db = createClient()
 
-    // Get active subscription
+    // Get active subscription using merchant_id
     const result = await db.execute(`
       SELECT s.square_subscription_id, sc.access_token 
       FROM subscriptions s
-      JOIN square_connections sc ON s.organization_id = sc.organization_id
-      WHERE s.organization_id = ? AND s.status IN ('active', 'paused')
+      JOIN square_connections sc ON s.merchant_id = sc.merchant_id
+      WHERE s.merchant_id = ? AND s.status IN ('active', 'paused')
       ORDER BY s.created_at DESC 
       LIMIT 1
-    `, [organization_id])
+    `, [merchant_id])
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "No active subscription found" }, { status: 404 })

@@ -184,29 +184,35 @@ export async function POST(request: NextRequest) {
 
     // --- DATABASE UPDATES (COMMON TO BOTH FLOWS) ---
     await db.transaction(async (tx: any) => {
-      await tx.execute(`
-        INSERT INTO subscriptions (
-          organization_id, square_subscription_id, plan_type, device_count, base_price_cents,
-          total_price_cents, status, current_period_start, current_period_end, merchant_id,
-          promo_code_used, discount_amount_cents
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          square_subscription_id = VALUES(square_subscription_id), plan_type = VALUES(plan_type),
-          device_count = VALUES(device_count), total_price_cents = VALUES(total_price_cents),
-          status = VALUES(status), promo_code_used = VALUES(promo_code_used),
-          discount_amount_cents = VALUES(discount_amount_cents), updated_at = NOW()
-      `, [
-        organization_id || 'default', 
-        subscriptionResponseData.id.startsWith('local-') ? null : subscriptionResponseData.id,
-        plan_type, device_count, basePriceCents, finalPrice, 
-        mapSquareStatusToOurStatus(subscriptionResponseData.status), 
-        subscriptionResponseData.start_date, 
-        subscriptionResponseData.charged_through_date, 
-        merchant_id, 
-        isTrialPeriod ? '30_DAY_TRIAL' : appliedPromoCode?.code, 
-        discountAmount
-      ]);
-
+     await tx.execute(`
+  INSERT INTO subscriptions (
+    organization_id, square_subscription_id, plan_type, device_count, base_price_cents,
+    total_price_cents, status, current_period_start, current_period_end, merchant_id,
+    promo_code_used, discount_amount_cents
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE
+    square_subscription_id = VALUES(square_subscription_id), 
+    plan_type = VALUES(plan_type),
+    device_count = VALUES(device_count), 
+    total_price_cents = VALUES(total_price_cents),
+    status = VALUES(status), 
+    promo_code_used = VALUES(promo_code_used),
+    discount_amount_cents = VALUES(discount_amount_cents), 
+    updated_at = NOW()
+`, [
+  organization_id || 'default', 
+  subscriptionResponseData.id.startsWith('local-') ? null : subscriptionResponseData.id,
+  plan_type, 
+  device_count, 
+  basePriceCents, 
+  finalPrice, 
+  mapSquareStatusToOurStatus(subscriptionResponseData.status), 
+  subscriptionResponseData.start_date, 
+  subscriptionResponseData.charged_through_date, 
+  merchant_id, 
+  isTrialPeriod ? '30_DAY_TRIAL' : appliedPromoCode?.code, 
+  discountAmount // This is now correctly named
+]);
       if (!isTrialPeriod && appliedPromoCode) {
         await tx.execute("UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?", [appliedPromoCode.id]);
         console.log(`📈 Incremented usage count for promo code: ${appliedPromoCode.code}`);

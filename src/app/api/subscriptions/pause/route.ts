@@ -1,5 +1,5 @@
 // ==========================================
-// 5. PAUSE/RESUME SUBSCRIPTION ENDPOINTS
+// 5. PAUSE SUBSCRIPTION ENDPOINT
 // app/api/subscriptions/pause/route.ts
 // ==========================================
 import { NextResponse, type NextRequest } from "next/server"
@@ -9,15 +9,15 @@ import { createClient } from "@/lib/db"
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { organization_id, pause_reason = "Customer request" } = body
+    const { merchant_id, pause_reason = "Customer request" } = body
 
     const db = createClient()
     const result = await db.execute(`
       SELECT s.square_subscription_id, sc.access_token 
       FROM subscriptions s
-      JOIN square_connections sc ON s.organization_id = sc.organization_id
-      WHERE s.organization_id = ? AND s.status = 'active'
-    `, [organization_id])
+      JOIN square_connections sc ON s.merchant_id = sc.merchant_id
+      WHERE s.merchant_id = ? AND s.status = 'active'
+    `, [merchant_id])
 
     if (result.rows.length === 0) {
       return NextResponse.json({ error: "No active subscription found" }, { status: 404 })

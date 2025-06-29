@@ -28,42 +28,43 @@ function ManagePageContent() {
     fetchSubscriptionDetails()
   }, [merchantId])
   
-  async function fetchSubscriptionDetails() {
-    try {
-      const response = await fetch(`/api/subscriptions/status?organization_id=${merchantId}`)
-      if (!response.ok) throw new Error('Failed to fetch subscription')
-      
-      const data = await response.json()
-      if (data.subscription) {
-        setSubscription(data.subscription)
-      } else {
-        setError('No active subscription found')
-      }
-    } catch (err) {
-      setError('Failed to load subscription details')
-    } finally {
-      setIsLoading(false)
+ async function fetchSubscriptionDetails() {
+  try {
+    const response = await fetch(`/api/subscriptions/status?merchant_id=${merchantId}`) // ✅ Changed from organization_id
+    if (!response.ok) throw new Error('Failed to fetch subscription')
+    
+    const data = await response.json()
+    if (data.subscription) {
+      setSubscription(data.subscription)
+    } else {
+      setError('No active subscription found')
     }
+  } catch (err) {
+    setError('Failed to load subscription details')
+  } finally {
+    setIsLoading(false)
   }
+}
   
   async function handleCancelSubscription() {
-    if (!confirm('Are you sure you want to cancel your subscription?')) return
+  if (!confirm('Are you sure you want to cancel your subscription?'))
+    return
     
-    try {
-      const response = await fetch('/api/subscriptions/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organization_id: merchantId })
-      })
-      
-      if (!response.ok) throw new Error('Failed to cancel subscription')
-      
-      alert('Subscription cancelled successfully')
-      router.push(`shulpad://subscription/cancelled?org_id=${merchantId}`)
-    } catch (err) {
-      alert('Failed to cancel subscription')
-    }
+  try {
+    const response = await fetch('/api/subscriptions/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merchant_id: merchantId }) // ✅ Changed from organization_id
+    })
+    
+    if (!response.ok) throw new Error('Failed to cancel subscription')
+    
+    alert('Subscription cancelled successfully')
+    router.push(`shulpad://subscription/cancelled?merchant_id=${merchantId}`) // ✅ Also update URL param
+  } catch (err) {
+    alert('Failed to cancel subscription')
   }
+}
   
   if (isLoading) {
     return (
