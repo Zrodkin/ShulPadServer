@@ -1,5 +1,5 @@
 // ==========================================
-// 2. GET SUBSCRIPTION STATUS - FIXED VERSION
+// 2. GET SUBSCRIPTION STATUS - FULLY FIXED VERSION
 // app/api/subscriptions/status/route.ts
 // ==========================================
 import { NextResponse } from 'next/server';
@@ -70,18 +70,28 @@ export async function GET(request: Request) {
       [merchant_id]
     );
 
+    // No subscription found - return standard format
     if (result.rows.length === 0) {
       return NextResponse.json({
         subscription: null,
         can_use_kiosk: false,
-        message: "No active subscription found"
+        grace_period_ends: null,
+        message: "No active subscription found",
+        error: null
       })
     }
 
     const subscription = result.rows[0] as any;
 
-    // For free subscriptions, just return the local data
+    // Initialize variables for response
+    let canUseKiosk = false;
+    let gracePeriodEnd = null;
+    let finalStatus = subscription.status;
+
+    // For free subscriptions, return simple response
     if (subscription.square_subscription_id.startsWith('free_')) {
+      canUseKiosk = subscription.status === 'active';
+      
       return NextResponse.json({
         subscription: {
           id: subscription.square_subscription_id,
@@ -89,9 +99,15 @@ export async function GET(request: Request) {
           plan_type: subscription.plan_type,
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
-          next_billing_date: calculateNextBillingDate(subscription)
+          next_billing_date: calculateNextBillingDate(subscription),
+          card_last_four: null,
+          start_date: subscription.created_at,
+          canceled_date: subscription.canceled_at
         },
-        can_use_kiosk: true  // ✅ FIXED: Moved to top level
+        can_use_kiosk: canUseKiosk,
+        grace_period_ends: gracePeriodEnd,
+        message: null,
+        error: null
       })
     }
 
@@ -111,51 +127,68 @@ export async function GET(request: Request) {
       )
 
       const squareSubscription = squareResponse.data.subscription
-      const currentStatus = mapSquareStatus(squareSubscription.status)
+      finalStatus = mapSquareStatus(squareSubscription.status)
 
       // Update local status if changed
-      if (currentStatus !== subscription.status) {
+      if (finalStatus !== subscription.status) {
         await db.execute(
           `UPDATE subscriptions
            SET status = ?, updated_at = NOW()
            WHERE id = ?`,
-          [currentStatus, subscription.id]
+          [finalStatus, subscription.id]
         )
       }
 
-      // Grace period logic
-      let canUseKiosk = false
-      let gracePeriodEnd = null
-
-      if (currentStatus === 'active' || currentStatus === 'paused') {
+      // Calculate can_use_kiosk and grace period
+      if (finalStatus === 'active' || finalStatus === 'paused') {
         canUseKiosk = true
-      } else if (currentStatus === 'canceled' && subscription.grace_period_start) {
+      } else if (finalStatus === 'canceled' && subscription.grace_period_start) {
         const gracePeriodDays = 7
-        gracePeriodEnd = new Date(subscription.grace_period_start)
-        gracePeriodEnd.setDate(gracePeriodEnd.getDate() + gracePeriodDays)
+        const gracePeriodEndDate = new Date(subscription.grace_period_start)
+        gracePeriodEndDate.setDate(gracePeriodEndDate.getDate() + gracePeriodDays)
 
-        if (new Date() < gracePeriodEnd) {
+        if (new Date() < gracePeriodEndDate) {
           canUseKiosk = true
+          gracePeriodEnd = gracePeriodEndDate.toISOString()
         }
       }
 
+      // Return response with CONSISTENT structure
       return NextResponse.json({
         subscription: {
           id: subscription.square_subscription_id,
-          status: currentStatus,
+          status: finalStatus,
           plan_type: subscription.plan_type,
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
-          next_billing_date: squareSubscription.charged_through_date,
-          card_last_four: squareSubscription.card_id ? '****' : null
+          next_billing_date: squareSubscription.charged_through_date || calculateNextBillingDate(subscription),
+          card_last_four: squareSubscription.card_id ? '****' : null,
+          start_date: squareSubscription.start_date || subscription.created_at,
+          canceled_date: squareSubscription.canceled_date || subscription.canceled_at
         },
-        can_use_kiosk: canUseKiosk,  // ✅ FIXED: Moved to top level
-        grace_period_end: gracePeriodEnd  // ✅ FIXED: Also at top level
+        can_use_kiosk: canUseKiosk,
+        grace_period_ends: gracePeriodEnd,
+        message: null,
+        error: null
       })
 
     } catch (squareError: any) {
       console.error("Square API Error:", squareError.response?.data)
-      // Return cached data if Square is down
+      
+      // Return cached data if Square is down - SAME STRUCTURE
+      canUseKiosk = subscription.status === 'active' || subscription.status === 'paused';
+      
+      if (subscription.status === 'canceled' && subscription.grace_period_start) {
+        const gracePeriodDays = 7
+        const gracePeriodEndDate = new Date(subscription.grace_period_start)
+        gracePeriodEndDate.setDate(gracePeriodEndDate.getDate() + gracePeriodDays)
+
+        if (new Date() < gracePeriodEndDate) {
+          canUseKiosk = true
+          gracePeriodEnd = gracePeriodEndDate.toISOString()
+        }
+      }
+      
       return NextResponse.json({
         subscription: {
           id: subscription.square_subscription_id,
@@ -164,18 +197,25 @@ export async function GET(request: Request) {
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
           next_billing_date: calculateNextBillingDate(subscription),
-          cached: true
+          card_last_four: null,
+          start_date: subscription.created_at,
+          canceled_date: subscription.canceled_at
         },
-        can_use_kiosk: subscription.status === 'active',  // ✅ FIXED: At top level
-        cached: true
+        can_use_kiosk: canUseKiosk,
+        grace_period_ends: gracePeriodEnd,
+        message: "Using cached data - Square API unavailable",
+        error: null
       })
     }
 
   } catch (error: any) {
     console.error("Error fetching subscription status:", error)
     return NextResponse.json({
-      error: "Failed to fetch subscription status",
-      details: error.message
+      subscription: null,
+      can_use_kiosk: false,
+      grace_period_ends: null,
+      message: null,
+      error: "Failed to fetch subscription status: " + error.message
     }, { status: 500 })
   }
 }
