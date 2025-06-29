@@ -1,5 +1,5 @@
 // ==========================================
-// 2. GET SUBSCRIPTION STATUS
+// 2. GET SUBSCRIPTION STATUS - FIXED VERSION
 // app/api/subscriptions/status/route.ts
 // ==========================================
 import { NextResponse } from 'next/server';
@@ -40,7 +40,6 @@ function calculateNextBillingDate(subscription: any): string | null {
   }
   return null;
 }
-
 
 export async function GET(request: Request) {
   try {
@@ -90,9 +89,9 @@ export async function GET(request: Request) {
           plan_type: subscription.plan_type,
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
-          next_billing_date: calculateNextBillingDate(subscription),
-          can_use_kiosk: true
-        }
+          next_billing_date: calculateNextBillingDate(subscription)
+        },
+        can_use_kiosk: true  // ✅ FIXED: Moved to top level
       })
     }
 
@@ -148,10 +147,10 @@ export async function GET(request: Request) {
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
           next_billing_date: squareSubscription.charged_through_date,
-          card_last_four: squareSubscription.card_id ? '****' : null,
-          can_use_kiosk: canUseKiosk,
-          grace_period_end: gracePeriodEnd
-        }
+          card_last_four: squareSubscription.card_id ? '****' : null
+        },
+        can_use_kiosk: canUseKiosk,  // ✅ FIXED: Moved to top level
+        grace_period_end: gracePeriodEnd  // ✅ FIXED: Also at top level
       })
 
     } catch (squareError: any) {
@@ -165,9 +164,10 @@ export async function GET(request: Request) {
           device_count: subscription.device_count,
           total_price: subscription.total_price_cents / 100,
           next_billing_date: calculateNextBillingDate(subscription),
-          can_use_kiosk: subscription.status === 'active',
           cached: true
-        }
+        },
+        can_use_kiosk: subscription.status === 'active',  // ✅ FIXED: At top level
+        cached: true
       })
     }
 
