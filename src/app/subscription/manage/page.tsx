@@ -337,16 +337,6 @@ async function handleCancelSubscription() {
           Card ending in {subscription.card_last_four}
         </span>
       </div>
-      <button style={{
-        color: '#2563eb',
-        background: 'none',
-        border: 'none',
-        fontSize: '14px',
-        cursor: 'pointer',
-        textDecoration: 'underline'
-      }}>
-        Update
-      </button>
     </div>
   </div>
 )}
