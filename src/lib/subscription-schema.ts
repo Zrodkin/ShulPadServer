@@ -4,11 +4,11 @@ export async function initializeSubscriptionSchema() {
   const db = createClient()
   
   try {
-    // Subscriptions table - UPDATED with missing columns
+    // Subscriptions table - Using merchant_id as primary identifier
     await db.execute(`
       CREATE TABLE IF NOT EXISTS subscriptions (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        organization_id VARCHAR(255) NOT NULL,
+        merchant_id VARCHAR(255) NOT NULL,
         square_subscription_id VARCHAR(255) UNIQUE,
         square_customer_id VARCHAR(255) NULL,
         square_card_id VARCHAR(255) NULL,
@@ -27,7 +27,7 @@ export async function initializeSubscriptionSchema() {
         grace_period_start TIMESTAMP NULL,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW() ON UPDATE NOW(),
-        INDEX idx_org_id (organization_id),
+        INDEX idx_merchant_id (merchant_id),
         INDEX idx_square_sub_id (square_subscription_id),
         INDEX idx_status (status),
         INDEX idx_promo_code (promo_code)

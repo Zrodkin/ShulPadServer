@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       SELECT s.*, sc.access_token 
       FROM subscriptions s
       JOIN square_connections sc ON s.organization_id = sc.organization_id
-      WHERE s.organization_id = ? AND s.status = 'active'
+      WHERE s.merchant_id = ? AND s.status = 'active'
     `, [organization_id])
 
     if (result.rows.length === 0) {
