@@ -256,16 +256,19 @@ function ManagePageContent() {
                     ${subscription.total_price}/{subscription.plan_type === 'monthly' ? 'month' : 'year'}
                   </span>
                 </div>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '8px 0'
-                }}>
-                  <span style={{ color: '#6b7280' }}>Next Billing</span>
-                  <span style={{ fontWeight: '500' }}>
-                    {new Date(subscription.next_billing_date).toLocaleDateString()}
-                  </span>
-                </div>
+               {subscription.status !== 'canceled' && subscription.next_billing_date && (
+  <div style={{
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '8px 0',
+    borderBottom: '1px solid #f3f4f6'
+  }}>
+    <span style={{ color: '#6b7280' }}>Next Billing</span>
+    <span style={{ fontWeight: '500' }}>
+      {new Date(subscription.next_billing_date).toLocaleDateString()}
+    </span>
+  </div>
+)}
               </div>
             </div>
             
