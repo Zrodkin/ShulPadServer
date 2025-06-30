@@ -1,7 +1,7 @@
 // src/app/subscription/manage/page.tsx - WITH GUARANTEED INLINE STYLES
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Head from 'next/head'
 
@@ -11,8 +11,23 @@ interface SubscriptionDetails {
   plan_type: string
   device_count: number
   total_price: number
-  next_billing_date: string
-  card_last_four: string
+  next_billing_date: string | null  // Can be null for canceled
+  card_last_four: string | null     // Can be null
+  canceled_date?: string
+  service_ends_date?: string
+  start_date?: string
+}
+
+// Also add the full response interface
+interface SubscriptionResponse {
+  subscription: SubscriptionDetails | null
+  can_use_kiosk: boolean
+  grace_period_ends: string | null
+  message: string | null
+  urgency_level: 'none' | 'warning' | 'critical'
+  status_reason: string
+  is_canceled_but_active: boolean
+  error: string | null
 }
 
 function ManagePageContent() {
@@ -22,49 +37,61 @@ function ManagePageContent() {
   
   const [subscription, setSubscription] = useState<SubscriptionDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  
-  useEffect(() => {
-    fetchSubscriptionDetails()
-  }, [merchantId])
-  
-  async function fetchSubscriptionDetails() {
-    try {
-      const response = await fetch(`/api/subscriptions/status?merchant_id=${merchantId}`)
-      if (!response.ok) throw new Error('Failed to fetch subscription')
-      
-      const data = await response.json()
-      if (data.subscription) {
-        setSubscription(data.subscription)
-      } else {
-        setError('No active subscription found')
+const [error, setError] = useState<string | null>(null)
+
+const fetchSubscriptionDetails = useCallback(async () => {
+  try {
+    const response = await fetch(`/api/subscriptions/status?merchant_id=${merchantId}`)
+    if (!response.ok) throw new Error('Failed to fetch subscription')
+    
+    const data: SubscriptionResponse = await response.json()
+    if (data.subscription) {
+      setSubscription(data.subscription)
+      // Optionally handle warnings/messages
+      if (data.message && data.urgency_level !== 'none') {
+        console.warn('Subscription warning:', data.message)
       }
-    } catch (err) {
-      setError('Failed to load subscription details')
-    } finally {
-      setIsLoading(false)
+    } else {
+      setError(data.error || data.message || 'No active subscription found')
     }
+  } catch (err) {
+    setError('Failed to load subscription details')
+  } finally {
+    setIsLoading(false)
   }
+}, [merchantId])
+
+useEffect(() => {
+  fetchSubscriptionDetails()
+}, [fetchSubscriptionDetails])
   
-  async function handleCancelSubscription() {
-    if (!confirm('Are you sure you want to cancel your subscription?'))
-      return
-      
-    try {
-      const response = await fetch('/api/subscriptions/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_id: merchantId })
-      })
-      
-      if (!response.ok) throw new Error('Failed to cancel subscription')
-      
-      alert('Subscription cancelled successfully')
-      router.push(`shulpad://subscription/cancelled?merchant_id=${merchantId}`)
-    } catch (err) {
-      alert('Failed to cancel subscription')
+async function handleCancelSubscription() {
+  if (!confirm('Are you sure you want to cancel your subscription?'))
+    return
+    
+  try {
+    const response = await fetch('/api/subscriptions/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merchant_id: merchantId })
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.details || errorData.error || 'Failed to cancel subscription')
     }
+
+    const cancelData = await response.json()
+    if (cancelData.success && cancelData.cancellation?.message) {
+      alert(cancelData.cancellation.message)
+    } else {
+      alert('Subscription cancelled successfully')
+    }
+    router.push(`shulpad://subscription/cancelled?merchant_id=${merchantId}`)
+  } catch (err: any) {
+    alert(err.message || 'Failed to cancel subscription')
   }
+}
   
   if (isLoading) {
     return (
@@ -272,55 +299,57 @@ function ManagePageContent() {
               </div>
             </div>
             
-            {/* Payment Method */}
-            <div style={{
-              padding: '24px',
-              borderTop: '1px solid #e5e7eb'
-            }}>
-              <h2 style={{
-                fontSize: '18px',
-                fontWeight: '600',
-                marginBottom: '16px',
-                color: '#111827'
-              }}>
-                Payment Method
-              </h2>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '32px',
-                    backgroundColor: '#f3f4f6',
-                    borderRadius: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '12px',
-                    fontFamily: 'monospace',
-                    marginRight: '12px'
-                  }}>
-                    ****
-                  </div>
-                  <span style={{ color: '#6b7280' }}>
-                    Card ending in {subscription.card_last_four}
-                  </span>
-                </div>
-                <button style={{
-                  color: '#2563eb',
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  textDecoration: 'underline'
-                }}>
-                  Update
-                </button>
-              </div>
-            </div>
+         {/* Payment Method - only show if card exists */}
+{subscription.card_last_four && (
+  <div style={{
+    padding: '24px',
+    borderTop: '1px solid #e5e7eb'
+  }}>
+    <h2 style={{
+      fontSize: '18px',
+      fontWeight: '600',
+      marginBottom: '16px',
+      color: '#111827'
+    }}>
+      Payment Method
+    </h2>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{
+          width: '48px',
+          height: '32px',
+          backgroundColor: '#f3f4f6',
+          borderRadius: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          fontFamily: 'monospace',
+          marginRight: '12px'
+        }}>
+          ****
+        </div>
+        <span style={{ color: '#6b7280' }}>
+          Card ending in {subscription.card_last_four}
+        </span>
+      </div>
+      <button style={{
+        color: '#2563eb',
+        background: 'none',
+        border: 'none',
+        fontSize: '14px',
+        cursor: 'pointer',
+        textDecoration: 'underline'
+      }}>
+        Update
+      </button>
+    </div>
+  </div>
+)}
             
             {/* Actions */}
             <div style={{
