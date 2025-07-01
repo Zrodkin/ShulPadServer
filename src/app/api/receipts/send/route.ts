@@ -2,7 +2,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/db" // Assuming this is your DB client setup
 import { logger } from "@/lib/logger" // Assuming this is your logger setup
-import { sesClient, mapSESError } from "@/lib/ses-client"
+import { smtp2goClient as sesClient, mapSMTP2GOError as mapSESError } from "@/lib/smtp2go-client"
 import { SendEmailCommand, SendRawEmailCommand } from '@aws-sdk/client-ses'
 
 
