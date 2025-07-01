@@ -14,6 +14,13 @@ interface RefreshResultDetail {
 // This endpoint should be called by a cron job every day
 export async function GET(request: Request) {
   try {
+     const authHeader = request.headers.get('authorization')
+    const expectedToken = process.env.CRON_SECRET // Add this to your Vercel env vars
+    
+    if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+      logger.error("Unauthorized cron job attempt")
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const SQUARE_APP_ID = process.env.SQUARE_APP_ID
     const SQUARE_APP_SECRET = process.env.SQUARE_APP_SECRET
     const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox"
