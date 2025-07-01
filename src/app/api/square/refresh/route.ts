@@ -104,14 +104,19 @@ export async function POST(request: NextRequest) {
         await db.execute("BEGIN")
 
         try {
-          await db.execute(
+          const formattedExpiresAt = new Date(data.expires_at)
+  .toISOString()
+  .slice(0, 19)
+  .replace("T", " ");
+
+          await db.execute(   
             `UPDATE square_connections 
              SET access_token = ?, 
                  refresh_token = ?, 
                  expires_at = ?, 
                  updated_at = NOW() 
              WHERE organization_id = ?`,
-            [data.access_token, data.refresh_token, data.expires_at, normalizedOrgId],
+            [data.access_token, data.refresh_token, formattedExpiresAt, normalizedOrgId],
           )
 
           await db.execute("COMMIT")

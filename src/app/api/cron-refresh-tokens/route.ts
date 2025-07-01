@@ -89,6 +89,11 @@ export async function GET(request: Request) {
         await db.execute("BEGIN")
 
         try {
+          const formattedExpiresAt = new Date(data.expires_at)
+  .toISOString()
+  .slice(0, 19)
+  .replace("T", " ");
+
           await db.execute(
   `UPDATE square_connections 
    SET access_token = ?, 
@@ -96,7 +101,7 @@ export async function GET(request: Request) {
        expires_at = ?, 
        updated_at = NOW() 
    WHERE organization_id = ?`,
-  [data.access_token, data.refresh_token, data.expires_at, organization_id],
+[data.access_token, data.refresh_token, formattedExpiresAt, organization_id],
 )
 
           await db.execute("COMMIT")
