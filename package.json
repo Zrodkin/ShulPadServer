@@ -7,9 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "init-db": "node scripts/init-db.mjs",
-    "setup:subscriptions": "tsx scripts/setup-subscriptions.ts",
-    "migrate:subscriptions": "tsx scripts/setup-subscriptions.ts"
+    "init-db": "node scripts/init-db.mjs"
+   
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.835.0",
@@ -22,6 +21,7 @@
     "nodemailer": "^7.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "stripe": "^18.4.0",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
