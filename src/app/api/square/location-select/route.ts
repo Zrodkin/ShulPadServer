@@ -34,10 +34,10 @@ export async function GET(request: NextRequest) {
 
     // Get pending authorization data
     const db = createClient()
-    const result = await db.execute(
-      "SELECT location_data, merchant_id FROM square_pending_tokens WHERE state = ?",
-      [state]
-    )
+   const result = await db.execute(
+  "SELECT location_data, merchant_id, organization_id FROM square_pending_tokens WHERE state = ?",
+  [state]
+)
 
     if (result.rows.length === 0) {
       logger.error("No pending authorization found for state", { state })
@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { location_data, merchant_id } = result.rows[0]
-    
+const { location_data, merchant_id, organization_id } = result.rows[0]
+
     if (!location_data) {
       logger.error("No location data found for state", { state })
       return NextResponse.redirect(
@@ -59,8 +59,8 @@ export async function GET(request: NextRequest) {
     logger.info("Displaying location selection", { merchant_id, locations_count: locations.length })
 
     // Generate location selection HTML
-    const html = generateLocationSelectionHTML(locations, state, merchant_id)
-    
+const html = generateLocationSelectionHTML(locations, state, merchant_id, organization_id)
+
     return new NextResponse(html, {
       headers: {
         "Content-Type": "text/html",
@@ -78,7 +78,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { state, location_id, organization_id = "default" } = body
-    const normalizedOrgId = normalizeOrganizationId(organization_id)
 
     logger.info("Processing location selection", { state, location_id, organization_id })
 
@@ -90,18 +89,19 @@ export async function POST(request: NextRequest) {
     const db = createClient()
     
     // Get the pending authorization data
-    const pendingResult = await db.execute(
-      `SELECT access_token, refresh_token, merchant_id, location_data, expires_at 
-       FROM square_pending_tokens WHERE state = ?`,
-      [state]
-    )
+const pendingResult = await db.execute(
+  `SELECT access_token, refresh_token, merchant_id, location_data, expires_at, device_id, organization_id 
+   FROM square_pending_tokens WHERE state = ?`,
+  [state]
+)
 
     if (pendingResult.rows.length === 0) {
       logger.error("No pending authorization found", { state })
       return NextResponse.json({ error: "Invalid state" }, { status: 400 })
     }
 
-    const { access_token, refresh_token, merchant_id, location_data, expires_at } = pendingResult.rows[0]
+const { access_token, refresh_token, merchant_id, location_data, expires_at, device_id, organization_id: organization_id } = pendingResult.rows[0]
+
     
     if (!location_data) {
       logger.error("No location data in pending tokens", { state })
@@ -117,12 +117,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid location selection" }, { status: 400 })
     }
 
-    logger.info("Valid location selected", { 
+   logger.info("Valid location selected", { 
   location_id, 
   location_name: selectedLocation.name,
   merchant_id,
   rawOrganizationId: organization_id,
-  normalizedOrganizationId: normalizedOrgId
+  normalizedOrganizationId: organization_id  // Use organization_id instead
 })
 
     // Begin transaction - FIXED: Use START TRANSACTION instead of BEGIN
@@ -130,27 +130,29 @@ export async function POST(request: NextRequest) {
 
     try {
       // Store in permanent connections table with selected location
-    const normalizedOrgId = normalizeOrganizationId(organization_id, merchant_id);
-      
+const normalizedOrgId = organization_id; 
+
       // Store in permanent connections table with selected location - FIXED: Use VALUES instead of EXCLUDED
-    await db.execute(
+  await db.execute(
   `INSERT INTO square_connections (
     organization_id, 
     merchant_id,
     location_id,
     access_token, 
     refresh_token, 
-    expires_at, 
+    expires_at,
+    device_id,  // ADD THIS
     created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, NOW())
-ON DUPLICATE KEY UPDATE
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+  ON DUPLICATE KEY UPDATE
     merchant_id = VALUES(merchant_id),
     location_id = VALUES(location_id),
     access_token = VALUES(access_token),
     refresh_token = VALUES(refresh_token),
     expires_at = VALUES(expires_at),
+    device_id = VALUES(device_id),  // ADD THIS
     updated_at = NOW()`,
-  [normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at]
+  [normalizedOrgId, merchant_id, location_id, access_token, refresh_token, expires_at, device_id]  // ADD device_id
 )
 
       await db.execute(
@@ -196,8 +198,7 @@ ON DUPLICATE KEY UPDATE
   }
 }
 
-function generateLocationSelectionHTML(locations: SquareLocation[], state: string, merchantId: string): string {
-  const locationOptions = locations
+function generateLocationSelectionHTML(locations: SquareLocation[], state: string, merchantId: string, organizationId: string): string {  const locationOptions = locations
     .filter(loc => loc.status === "ACTIVE")
     .map(loc => {
       const address = loc.address 
@@ -241,7 +242,7 @@ function generateLocationSelectionHTML(locations: SquareLocation[], state: strin
           body: JSON.stringify({
             state: '${state}',
             location_id: selectedLocationId,
-            organization_id: 'default'
+            organization_id: '${organizationId}'
           })
         });
         
