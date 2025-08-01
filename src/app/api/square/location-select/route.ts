@@ -77,9 +77,9 @@ const html = generateLocationSelectionHTML(locations, state, merchant_id, organi
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { state, location_id, organization_id = "default" } = body
+  const { state, location_id, organization_id: orgIdFromBody } = body;
 
-    logger.info("Processing location selection", { state, location_id, organization_id })
+    logger.info("Processing location selection", { state, location_id, orgIdFromBody })
 
     if (!state || !location_id) {
       logger.error("Missing required parameters", { state, location_id })
@@ -100,7 +100,7 @@ const pendingResult = await db.execute(
       return NextResponse.json({ error: "Invalid state" }, { status: 400 })
     }
 
-const { access_token, refresh_token, merchant_id, location_data, expires_at, device_id, organization_id: organization_id } = pendingResult.rows[0]
+const { access_token, refresh_token, merchant_id, location_data, expires_at, device_id, organization_id: orgIdFromDb } = pendingResult.rows[0]
 
     
     if (!location_data) {
@@ -121,8 +121,8 @@ const { access_token, refresh_token, merchant_id, location_data, expires_at, dev
   location_id, 
   location_name: selectedLocation.name,
   merchant_id,
-  rawOrganizationId: organization_id,
-  normalizedOrganizationId: organization_id  // Use organization_id instead
+  rawOrganizationId: orgIdFromBody,
+  normalizedOrganizationId: orgIdFromDb  // Use orgIdFromDb instead
 })
 
     // Begin transaction - FIXED: Use START TRANSACTION instead of BEGIN
@@ -130,7 +130,7 @@ const { access_token, refresh_token, merchant_id, location_data, expires_at, dev
 
     try {
       // Store in permanent connections table with selected location
-const normalizedOrgId = organization_id; 
+const normalizedOrgId = orgIdFromDb; 
 
       // Store in permanent connections table with selected location - FIXED: Use VALUES instead of EXCLUDED
   await db.execute(
@@ -169,7 +169,7 @@ const normalizedOrgId = organization_id;
       await db.execute("COMMIT")
 
      logger.info("Location selection completed successfully", { 
-  rawOrganizationId: organization_id,
+  rawOrganizationId: orgIdFromBody,
   normalizedOrganizationId: normalizedOrgId,
   merchant_id, 
   location_id,
