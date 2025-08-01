@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/square/refresh-tokens",
-      "schedule": "0 10 * * *"
-    }
-  ]
-}

@@ -19,8 +19,15 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code")
     const state = searchParams.get("state")
     const deviceId = searchParams.get("device_id")
-    let rawOrganizationId = searchParams.get("organization_id") || "default"
-    let organizationId = normalizeOrganizationId(rawOrganizationId)
+  let rawOrganizationId = searchParams.get("organization_id")
+if (!rawOrganizationId || rawOrganizationId === "default") {
+  logger.error("Invalid organization_id - cannot use default for multi-tenant system", {
+    rawOrganizationId,
+    url: request.url
+  })
+  return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_organization`)
+}
+let organizationId = normalizeOrganizationId(rawOrganizationId)
 
     logger.info("OAuth callback started", { 
       rawOrganizationId,
