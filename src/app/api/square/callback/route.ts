@@ -3,7 +3,6 @@ import { type NextRequest, NextResponse } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
-import { normalizeOrganizationId } from "@/lib/organizationUtils"
 import { getMerchantEmail } from "@/lib/square-merchant"
 
 
@@ -19,11 +18,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get("code")
     const state = searchParams.get("state")
-    const deviceId = searchParams.get("device_id")
     const db = createClient()
  // Get organization_id from the database using the state
 const stateResult = await db.execute(
-  `SELECT organization_id FROM square_pending_tokens WHERE state = ?`,
+  `SELECT organization_id, device_id FROM square_pending_tokens WHERE state = ?`,
   [state]
 )
 
@@ -40,8 +38,10 @@ if (!rawOrganizationId || rawOrganizationId === "default") {
   })
   return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_organization`)
 }
+const deviceId = stateResult.rows[0].device_id  // Get device_id from the database!
 
-let organizationId = normalizeOrganizationId(rawOrganizationId)
+
+let organizationId = rawOrganizationId 
 
     logger.info("OAuth callback started", { 
       rawOrganizationId,
@@ -174,8 +174,8 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
       })
 
       try {
-        const normalizedOrgId = normalizeOrganizationId(organizationId, merchant_id)
-        
+const normalizedOrgId = organizationId 
+
    // 🆕 Fetch merchant email
 console.log("🔍 Fetching merchant email...")
 const merchantEmail = await getMerchantEmail(access_token, merchant_id)
@@ -194,18 +194,20 @@ await db.execute(
     access_token, 
     refresh_token, 
     expires_at,
+    device_id,
     merchant_email,
     created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
   ON DUPLICATE KEY UPDATE
     merchant_id = VALUES(merchant_id),
     location_id = VALUES(location_id),
     access_token = VALUES(access_token),
     refresh_token = VALUES(refresh_token),
     expires_at = VALUES(expires_at),
+    device_id = VALUES(device_id),        // ADD THIS
     merchant_email = VALUES(merchant_email),
     updated_at = NOW()`,
-  [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, convertToMySQLDatetime(expires_at), merchantEmail]
+  [normalizedOrgId, merchant_id, singleLocation.id, access_token, refresh_token, convertToMySQLDatetime(expires_at), deviceId, merchantEmail]
 )
 
         // 🚀 OPTIMIZATION 6: Update pending tokens in parallel (fire and forget)
