@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger"
 import { normalizeOrganizationId } from "@/lib/organizationUtils"
 import { getMerchantEmail } from "@/lib/square-merchant"
 
+
 // Add MySQL datetime conversion function
 function convertToMySQLDatetime(isoString: string): string {
   return new Date(isoString).toISOString().slice(0, 19).replace('T', ' ');
@@ -19,14 +20,27 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code")
     const state = searchParams.get("state")
     const deviceId = searchParams.get("device_id")
-  let rawOrganizationId = searchParams.get("organization_id")
+    const db = createClient()
+ // Get organization_id from the database using the state
+const stateResult = await db.execute(
+  `SELECT organization_id FROM square_pending_tokens WHERE state = ?`,
+  [state]
+)
+
+if (stateResult.rows.length === 0) {
+  logger.error("Invalid state - no pending token found")
+  return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_state`)
+}
+
+const rawOrganizationId = stateResult.rows[0].organization_id
 if (!rawOrganizationId || rawOrganizationId === "default") {
-  logger.error("Invalid organization_id - cannot use default for multi-tenant system", {
+  logger.error("Invalid organization_id in pending token", {
     rawOrganizationId,
-    url: request.url
+    state
   })
   return NextResponse.redirect(`${request.nextUrl.origin}/api/square/success?success=false&error=invalid_organization`)
 }
+
 let organizationId = normalizeOrganizationId(rawOrganizationId)
 
     logger.info("OAuth callback started", { 
@@ -120,7 +134,6 @@ let organizationId = normalizeOrganizationId(rawOrganizationId)
     })
 
     // Initialize database connection while locations are being fetched
-    const db = createClient()
     
     let locations, activeLocations
     try {

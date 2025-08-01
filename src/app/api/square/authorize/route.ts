@@ -8,7 +8,11 @@ import { logger } from "@/lib/logger"
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
-    const organizationId = url.searchParams.get("organization_id") || "default"
+const organizationId = url.searchParams.get("organization_id")
+if (!organizationId || organizationId === "default") {
+  logger.error("Missing or invalid organization_id")
+  return NextResponse.json({ error: "Organization ID is required" }, { status: 400 })
+}
     const deviceId = url.searchParams.get("device_id")
 
     logger.info("🚀 Authorize endpoint called", { organizationId, deviceId })
@@ -51,6 +55,7 @@ export async function GET(request: Request) {
         `INSERT INTO square_pending_tokens (
           state, 
           device_id,
+          organization_id,
           access_token, 
           refresh_token, 
           merchant_id, 
@@ -58,14 +63,15 @@ export async function GET(request: Request) {
           created_at
         ) VALUES (
           ?, 
-          ?,    
+          ?, 
+          ?,   
           NULL, 
           NULL, 
           NULL, 
           NULL, 
           NOW()
         )`,
-        [state, deviceId]
+        [state, deviceId, organizationId]
       )
       
       logger.info("✅ Stored pending token state", { state, deviceId })
