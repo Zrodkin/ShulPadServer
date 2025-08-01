@@ -48,35 +48,23 @@ if (!organizationId || organizationId === "default") {
     const state = uuidv4()
 
     // Store the state in the database
-    try {
-      const db = createClient()
-      
+   try {
+      // ✅ FIXED: Simplified the INSERT query to only include columns with explicit values.
+      // The other columns (access_token, etc.) will use their default values (NULL)
+      // and created_at will use NOW() as defined in the table schema.
+      const db = createClient();
       await db.execute(
-        `INSERT INTO square_pending_tokens (
-          state, 
-          device_id,
-          organization_id,
-          access_token, 
-          refresh_token, 
-          merchant_id, 
-          expires_at, 
-          created_at
-        ) VALUES (
-          ?, 
-          ?, 
-          ?,   
-          NULL, 
-          NULL, 
-          NULL, 
-          NULL, 
-          NOW()
-        )`,
-        [state, deviceId, organizationId]
-      )
-      
-      logger.info("✅ Stored pending token state", { state, deviceId })
+        `INSERT INTO square_pending_tokens (state, organization_id, device_id) VALUES (?, ?, ?)`,
+        [state, organizationId, deviceId]
+      );
+      logger.info("Stored pending token in database", { state, organizationId, deviceId });
     } catch (dbError) {
-      logger.error("❌ Database error storing state", { error: dbError })
+      logger.error("Database error while storing pending token", { dbError });
+      return NextResponse.json({
+        error: "Database error"
+      }, {
+        status: 500
+      });
     }
 
     const authUrl =
