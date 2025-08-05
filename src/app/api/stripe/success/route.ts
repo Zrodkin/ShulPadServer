@@ -60,7 +60,7 @@ export async function GET(request: Request) {
             subscription.status,
             toMySQLDateTime(new Date((subscription as any).current_period_start * 1000)),
             toMySQLDateTime(new Date((subscription as any).current_period_end * 1000)),
-            subscription.trial_end ? toMySQLDateTime(new Date(subscription.trial_end * 1000)) : null
+            subscription.trial_end ? toMySQLDateTime(new Date((subscription as any).trial_end * 1000)) : null
           ])
           
           logger.info("Subscription created from success page", {
