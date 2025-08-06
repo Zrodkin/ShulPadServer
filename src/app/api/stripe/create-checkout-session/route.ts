@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       customer: customerId,
       customer_email: !customerId ? merchant_email : undefined,
       billing_address_collection: 'auto',
+      allow_promotion_codes: true,
       line_items: [
         {
           price: priceId,
