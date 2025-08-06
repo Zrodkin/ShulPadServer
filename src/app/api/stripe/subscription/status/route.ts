@@ -64,7 +64,7 @@ export async function GET(request: Request) {
       can_use_kiosk: canUseKiosk,
       trial_end: subscription.trial_end,
       current_period_end: subscription.current_period_end,
-      cancel_at_period_end: subscription.cancel_at_period_end,
+      cancel_at_period_end: Boolean(subscription.cancel_at_period_end), // FIX: Convert 0/1 to boolean
       days_remaining: daysRemaining,
       stripe_customer_id: subscription.stripe_customer_id,
       stripe_subscription_id: subscription.stripe_subscription_id
