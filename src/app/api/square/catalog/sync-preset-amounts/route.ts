@@ -16,6 +16,7 @@ interface CatalogItemVariationData {
     amount: number;
     currency: string;
   };
+  user_data?: string; // Add this line
 }
 
 interface CatalogItem {
@@ -79,31 +80,29 @@ async function syncPresetAmountsForAllOrganizations(forceSynchronization: boolea
 
   try {
     // Get all organizations with kiosk settings that have preset_amounts or need updating
-    const query = forceSynchronization 
-      ? `
-        SELECT k.id, k.organization_id, k.preset_amounts, k.catalog_parent_id,
-               o.id as org_id, o.square_merchant_id,
-               s.access_token, s.location_id
-        FROM kiosk_settings k
-        JOIN organizations o ON k.organization_id = o.id
-        JOIN square_connections s ON o.id = s.organization_id
-        WHERE s.access_token IS NOT NULL
-        AND (
-          (k.preset_amounts IS NOT NULL AND JSON_LENGTH(k.preset_amounts) > 0)
-          OR k.catalog_parent_id IS NOT NULL
-        )
-      `
-      : `
-        SELECT k.id, k.organization_id, k.preset_amounts, k.catalog_parent_id,
-               o.id as org_id, o.square_merchant_id,
-               s.access_token, s.location_id
-        FROM kiosk_settings k
-        JOIN organizations o ON k.organization_id = o.id
-        JOIN square_connections s ON o.id = s.organization_id
-        WHERE k.preset_amounts IS NOT NULL 
-        AND JSON_LENGTH(k.preset_amounts) > 0
-        AND s.access_token IS NOT NULL
-      `;
+   const query = forceSynchronization 
+  ? `SELECT ks.id, ks.organization_id, ks.preset_amounts, ks.catalog_parent_id,
+            ks.processing_fee_enabled, ks.processing_fee_percentage, ks.processing_fee_fixed_cents,
+            o.id as org_id, o.square_merchant_id,
+            sc.access_token, sc.location_id
+     FROM kiosk_settings ks
+     JOIN organizations o ON ks.organization_id = o.id
+     JOIN square_connections sc ON o.id = sc.organization_id
+     WHERE sc.access_token IS NOT NULL
+     AND (
+       (ks.preset_amounts IS NOT NULL AND JSON_LENGTH(ks.preset_amounts) > 0)
+       OR ks.catalog_parent_id IS NOT NULL
+     )`
+  : `SELECT ks.id, ks.organization_id, ks.preset_amounts, ks.catalog_parent_id,
+            ks.processing_fee_enabled, ks.processing_fee_percentage, ks.processing_fee_fixed_cents,
+            o.id as org_id, o.square_merchant_id,
+            sc.access_token, sc.location_id
+     FROM kiosk_settings ks
+     JOIN organizations o ON ks.organization_id = o.id
+     JOIN square_connections sc ON o.id = sc.organization_id
+     WHERE ks.preset_amounts IS NOT NULL 
+     AND JSON_LENGTH(ks.preset_amounts) > 0
+     AND sc.access_token IS NOT NULL`;
 
     const result = await db.execute(query);
     logger.info(`Found ${result.rows.length} organizations to sync`);
@@ -164,8 +163,9 @@ async function syncPresetAmountsForOrganization(organizationId: string, forceSyn
 
   try {
     // Get the organization data
-    const query = `
-      SELECT k.id, k.organization_id, k.preset_amounts, k.catalog_parent_id,
+   const query = `
+  SELECT k.id, k.organization_id, k.preset_amounts, k.catalog_parent_id,
+         k.processing_fee_enabled, k.processing_fee_percentage, k.processing_fee_fixed_cents,
              o.id as org_id, o.square_merchant_id,
              s.access_token, s.location_id
       FROM kiosk_settings k
@@ -253,6 +253,13 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
   const accessToken = row.access_token;
   const locationId = row.location_id;
   
+  // SIMPLE FIX: Get processing fee settings from the row
+  const processingFeeSettings = {
+    enabled: row.processing_fee_enabled || false,
+    percentage: row.processing_fee_percentage || 2.6,
+    fixed_cents: row.processing_fee_fixed_cents || 15
+  };
+  
   if (!accessToken) {
     return { 
       success: false, 
@@ -300,12 +307,13 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
       logger.info(`Created new parent donation item: ${donationItemId}`);
     }
 
-    // STEP 3: Create/update variations with robust error handling
-    const catalogVariations = await createDonationVariationsWithRetry(
-      accessToken, 
-      donationItemId, 
-      presetAmounts.map((amount: string) => parseFloat(amount))
-    );
+    
+ const catalogVariations = await createDonationVariationsWithRetry(
+    accessToken, 
+    donationItemId, 
+    presetAmounts.map((amount: string) => parseFloat(amount)),
+    processingFeeSettings // Pass the settings here
+  );
 
     if (!catalogVariations || catalogVariations.length === 0) {
       
@@ -324,9 +332,22 @@ async function processOrganizationSync(db: any, row: any, forceSynchronization: 
     // STEP 5: Insert new records into preset_donations table
     for (let i = 0; i < presetAmounts.length; i++) {
       const amount = parseFloat(presetAmounts[i]);
-      const variation = catalogVariations.find((v: CatalogItem) => 
-        v.item_variation_data?.price_money?.amount === Math.round(amount * 100)
-      );
+    const variation = catalogVariations.find((v: CatalogItem) => {
+  // When fees are enabled, match by the original amount stored in user_data
+  if (processingFeeSettings.enabled && v.item_variation_data?.user_data) {
+    try {
+      const userData = JSON.parse(v.item_variation_data.user_data);
+      return userData.original_amount === amount;
+    } catch (e) {
+      // Fallback if user_data parsing fails
+      console.error('Failed to parse user_data:', e);
+    }
+  }
+  
+  // When fees are disabled, match by the catalog price
+  // Note: Square stores amounts in cents, so multiply by 100
+  return v.item_variation_data?.price_money?.amount === Math.round(amount * 100);
+});
 
       if (variation) {
         await client.execute(
@@ -406,28 +427,79 @@ async function validateCatalogItem(accessToken: string, catalogItemId: string): 
 async function createDonationVariationsWithRetry(
   accessToken: string, 
   donationItemId: string, 
-  amounts: number[]
+  amounts: number[],
+  processingFeeSettings?: { enabled: boolean; percentage: number; fixed_cents: number }
 ): Promise<CatalogItem[]> {
   try {
-    // First attempt: try normal creation
-    const variations = await createDonationVariationsInSquare(accessToken, donationItemId, amounts);
+    const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "production";
+    const SQUARE_DOMAIN = SQUARE_ENVIRONMENT === "production" ? "squareup.com" : "squareupsandbox.com";
     
-    if (variations && variations.length > 0) {
-      return variations;
+    // Prepare batch objects for variations
+    const batchObjects = amounts.map((amount: number) => {
+      let displayAmount = amount;
+      let variationName = `$${amount} Donation`;
+      
+      // SIMPLE FIX: If processing fees are enabled, create variation with fee-inclusive amount
+      if (processingFeeSettings?.enabled) {
+        const amountCents = Math.round(amount * 100);
+        const percentageFee = Math.round(amountCents * processingFeeSettings.percentage / 100);
+        const totalFee = percentageFee + processingFeeSettings.fixed_cents;
+        const totalCents = amountCents + totalFee;
+        displayAmount = totalCents / 100;
+        
+        // Show both the donation and total in the name
+        variationName = `$${amount} Donation → $${displayAmount.toFixed(2)} Total`;
+      }
+      
+      const variation_id = `VAR_${amount.toString().replace('.', '_')}_${uuidv4().substring(0, 8)}`;
+      
+      return {
+        type: "ITEM_VARIATION",
+        id: variation_id,
+        present_at_all_locations: true,
+        item_variation_data: {
+          item_id: donationItemId,
+          name: variationName,
+          pricing_type: "FIXED_PRICING",
+          price_money: {
+            amount: Math.round(displayAmount * 100), // Use display amount (with fee if enabled)
+            currency: "USD"
+          },
+          // Store original donation amount in user_data for reference
+          user_data: JSON.stringify({ 
+            original_amount: amount,
+            fee_included: processingFeeSettings?.enabled || false
+          })
+        }
+      };
+    });
+
+    const response = await axios.post(
+      `https://connect.${SQUARE_DOMAIN}/v2/catalog/batch-upsert`,
+      {
+        idempotency_key: uuidv4(),
+        batches: [
+          {
+            objects: batchObjects
+          }
+        ]
+      },
+      {
+        headers: {
+          "Square-Version": "2023-09-25",
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    if (response.data && response.data.objects) {
+      return response.data.objects as CatalogItem[];
     }
     
-    // If that failed, it might be because the parent item is stale
-    // Create a completely new parent item and try again
-    logger.warn("Initial variation creation failed, creating fresh parent item");
-    
-    const newParentId = await createDonationsItemInSquare(accessToken, ""); // Will use default location
-    if (!newParentId) {
-      throw new Error("Failed to create new parent item on retry");
-    }
-    
-    return await createDonationVariationsInSquare(accessToken, newParentId, amounts);
+    return [];
   } catch (error) {
-    logger.error('Error creating donation variations with retry:', { error });
+    logger.error('Error creating donation variations in Square', { error });
     return [];
   }
 }
