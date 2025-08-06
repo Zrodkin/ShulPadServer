@@ -28,9 +28,12 @@ export async function GET(request: Request) {
         const organizationId = session.metadata?.organization_id
         
         if (organizationId) {
-          const subscription = typeof session.subscription === 'string' 
-            ? await stripe.subscriptions.retrieve(session.subscription)
-            : session.subscription as Stripe.Subscription
+          // Always retrieve the subscription to get full details
+          const subscriptionId = typeof session.subscription === 'string' 
+            ? session.subscription 
+            : (session.subscription as any).id
+            
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId) as any
           
           const db = createClient()
           
@@ -58,9 +61,9 @@ export async function GET(request: Request) {
             session.customer,
             subscription.id,
             subscription.status,
-            toMySQLDateTime(new Date((subscription as any).current_period_start * 1000)),
-            toMySQLDateTime(new Date((subscription as any).current_period_end * 1000)),
-            subscription.trial_end ? toMySQLDateTime(new Date((subscription as any).trial_end * 1000)) : null
+            toMySQLDateTime(new Date(subscription.current_period_start * 1000)),
+            toMySQLDateTime(new Date(subscription.current_period_end * 1000)),
+            subscription.trial_end ? toMySQLDateTime(new Date(subscription.trial_end * 1000)) : null
           ])
           
           logger.info("Subscription created from success page", {
