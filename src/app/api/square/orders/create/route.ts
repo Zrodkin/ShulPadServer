@@ -16,6 +16,12 @@ interface LineItem {
   name?: string;
 }
 
+interface ProcessingFeeConfig {
+  enabled: boolean;
+  percentage: number;  // e.g., 2.6 for 2.6%
+  fixed_cents: number; // e.g., 15 for 15¢
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -28,7 +34,10 @@ export async function POST(request: NextRequest) {
       idempotency_key = uuidv4(),
       // NEW: Custom amount support
       is_custom_amount = false,
-      custom_amount = null
+      custom_amount = null,
+      processing_fee_enabled = false,
+      processing_fee_percentage = 2.6,
+      processing_fee_fixed_cents = 15,
     } = body
 
     logger.info("Order creation request", { 
@@ -171,7 +180,7 @@ export async function POST(request: NextRequest) {
 
         return lineItem
       })
-    } else {
+   } else {
       // No valid line items provided
       logger.error("No valid line items or custom amount provided")
       return NextResponse.json({ 
@@ -179,13 +188,55 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Calculate processing fee if enabled
+    let serviceCharges = undefined;
+    
+    if (processing_fee_enabled) {
+      // Calculate subtotal from all line items
+      let subtotal = 0;
+      
+      for (const item of processedLineItems) {
+        const quantity = parseInt(item.quantity || "1");
+        if (item.base_price_money?.amount) {
+          subtotal += item.base_price_money.amount * quantity;
+        } else if (item.catalog_object_id && custom_amount) {
+          // For custom amounts using catalog items
+          subtotal += Math.round(custom_amount * 100);
+        }
+      }
+      
+      // Calculate fee: (subtotal * percentage / 100) + fixed cents
+      const percentageFee = Math.round(subtotal * processing_fee_percentage / 100);
+      const totalFee = percentageFee + processing_fee_fixed_cents;
+      
+      logger.info("Processing fee calculation", {
+        subtotal_cents: subtotal,
+        percentage: processing_fee_percentage,
+        percentage_fee_cents: percentageFee,
+        fixed_fee_cents: processing_fee_fixed_cents,
+        total_fee_cents: totalFee
+      });
+      
+      // Create service charge for the processing fee
+      serviceCharges = [{
+        name: "Processing Fee",
+        amount_money: {
+          amount: totalFee,
+          currency: "USD"
+        },
+        calculation_phase: "SUBTOTAL_PHASE",
+        taxable: false
+      }];
+    }
+
     // Create the order request
     const orderRequest = {
       idempotency_key,
-      order: {
+   order: {
         location_id: location_id,
         line_items: processedLineItems,
         state: state,
+        ...(serviceCharges && { service_charges: serviceCharges }),
         ...(customer_id && { customer_id }),
         ...(reference_id && { reference_id })
       }
@@ -223,7 +274,7 @@ export async function POST(request: NextRequest) {
       line_items_created: order?.lineItems?.length
     })
 
-    // Return formatted response
+  // Return formatted response
     return NextResponse.json({
       success: true,
       order_id: order?.id,
@@ -237,6 +288,12 @@ export async function POST(request: NextRequest) {
         catalog_object_id: item.catalogObjectId || null,
         base_price_money: item.basePriceMoney,
         is_custom_amount: is_custom_amount && custom_amount > 0
+      })),
+      service_charges: order?.serviceCharges?.map((charge: any) => ({
+        uid: charge.uid,
+        name: charge.name,
+        amount_money: charge.amountMoney,
+        total_money: charge.totalMoney
       })),
       location_id: order?.locationId,
       created_at: order?.createdAt,
