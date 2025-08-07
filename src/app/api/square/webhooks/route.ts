@@ -1,3 +1,6 @@
+// app/api/square/webhooks/route.ts
+// THIS IS YOUR COMPLETE UPDATED WEBHOOK FILE - REPLACE YOUR EXISTING FILE WITH THIS
+
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
@@ -116,9 +119,20 @@ export async function POST(request: NextRequest) {
         await handleOrderEvent(db, webhookEvent)
         break
         
+      // ===== NEW: SUBSCRIPTION EVENTS =====
+      case 'subscription.created':
+      case 'subscription.updated':
+      case 'subscription.canceled':
+      case 'subscription.paused':
+      case 'subscription.resumed':
+        await handleSubscriptionEvent(db, webhookEvent)
+        break
+        
+      // ===== UPDATED: INVOICE EVENTS (for subscription billing) =====
       case 'invoice.created':
       case 'invoice.updated':
       case 'invoice.payment_made':
+      case 'invoice.canceled':
         await handleInvoiceEvent(db, webhookEvent)
         break
         
@@ -165,6 +179,10 @@ ON DUPLICATE KEY UPDATE
     )
   }
 }
+
+// ========================================
+// EXISTING HANDLERS (unchanged)
+// ========================================
 
 // Handler for OAuth authorization revocation
 async function handleOAuthRevocation(db: any, event: WebhookEvent) {
@@ -312,20 +330,253 @@ ON DUPLICATE KEY UPDATE
   }
 }
 
-// Handler for invoice events
-async function handleInvoiceEvent(db: any, event: WebhookEvent) {
-  const invoiceId = event.data?.id
+// ========================================
+// NEW HANDLERS FOR SUBSCRIPTIONS
+// ========================================
+
+// Handler for subscription events
+async function handleSubscriptionEvent(db: any, event: WebhookEvent) {
+  const subscription = event.data?.object?.subscription
   
-  logger.info("Invoice event received", { 
+  if (!subscription) {
+    logger.warn("Subscription event missing subscription data", { event_id: event.event_id })
+    return
+  }
+
+  logger.info("Processing subscription event", {
     type: event.type,
-    invoice_id: invoiceId,
-    merchant_id: event.merchant_id,
-    event_id: event.event_id 
+    subscription_id: subscription.id,
+    status: subscription.status,
+    customer_id: subscription.customer_id
   })
+
+  try {
+    // Log the event in subscription_events table
+    await db.execute(
+      `INSERT INTO subscription_events 
+       (square_subscription_id, event_type, event_data, webhook_event_id, processed_at)
+       VALUES (?, ?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE processed_at = NOW()`,
+      [
+        subscription.id,
+        event.type,
+        JSON.stringify(subscription),
+        event.event_id
+      ]
+    )
+
+    // Update subscription status in donor_subscriptions table
+    switch (event.type) {
+      case 'subscription.created':
+        await db.execute(
+          `UPDATE donor_subscriptions 
+           SET status = ?, start_date = ?, updated_at = NOW()
+           WHERE square_subscription_id = ?`,
+          [subscription.status, subscription.start_date, subscription.id]
+        )
+        logger.info("Subscription created and status updated", { 
+          subscription_id: subscription.id 
+        })
+        break
+        
+      case 'subscription.updated':
+        await db.execute(
+          `UPDATE donor_subscriptions 
+           SET status = ?, updated_at = NOW()
+           WHERE square_subscription_id = ?`,
+          [subscription.status, subscription.id]
+        )
+        logger.info("Subscription status updated", { 
+          subscription_id: subscription.id,
+          status: subscription.status 
+        })
+        break
+        
+      case 'subscription.canceled':
+        await db.execute(
+          `UPDATE donor_subscriptions 
+           SET status = 'CANCELED', 
+               canceled_at = NOW(), 
+               cancel_reason = ?,
+               updated_at = NOW()
+           WHERE square_subscription_id = ?`,
+          [subscription.canceled_reason || 'Canceled', subscription.id]
+        )
+        logger.info("Subscription canceled", { 
+          subscription_id: subscription.id 
+        })
+        break
+        
+      case 'subscription.paused':
+        await db.execute(
+          `UPDATE donor_subscriptions 
+           SET status = 'PAUSED', updated_at = NOW()
+           WHERE square_subscription_id = ?`,
+          [subscription.id]
+        )
+        logger.info("Subscription paused", { 
+          subscription_id: subscription.id 
+        })
+        break
+        
+      case 'subscription.resumed':
+        await db.execute(
+          `UPDATE donor_subscriptions 
+           SET status = 'ACTIVE', updated_at = NOW()
+           WHERE square_subscription_id = ?`,
+          [subscription.id]
+        )
+        logger.info("Subscription resumed", { 
+          subscription_id: subscription.id 
+        })
+        break
+    }
+  } catch (error) {
+    logger.error("Error handling subscription event", { 
+      error, 
+      event_type: event.type,
+      subscription_id: subscription.id 
+    })
+  }
+}
+
+// UPDATED Handler for invoice events (now handles subscription invoices)
+async function handleInvoiceEvent(db: any, event: WebhookEvent) {
+  const invoice = event.data?.object?.invoice
   
-  // TODO: Handle invoice events if your charity app uses Square Invoices
-  // This might be relevant for:
-  // - Recurring donations
-  // - Large donation campaigns
-  // - Corporate sponsorship invoicing
+  if (!invoice) {
+    logger.warn("Invoice event missing invoice data", { event_id: event.event_id })
+    return
+  }
+
+  // Check if this invoice is related to a subscription
+  if (!invoice.subscription_id) {
+    logger.info("Invoice not related to subscription, skipping detailed handling", { 
+      invoice_id: invoice.id 
+    })
+    // You can still log it for general invoice tracking if needed
+    return
+  }
+
+  logger.info("Processing subscription invoice event", {
+    type: event.type,
+    invoice_id: invoice.id,
+    subscription_id: invoice.subscription_id,
+    status: invoice.status
+  })
+
+  try {
+    // Get organization_id from the subscription
+    const subResult = await db.execute(
+      `SELECT organization_id, donor_email, donor_name, amount_cents 
+       FROM donor_subscriptions 
+       WHERE square_subscription_id = ?`,
+      [invoice.subscription_id]
+    )
+
+    if (subResult.rows.length === 0) {
+      logger.warn("No subscription found for invoice", { 
+        invoice_id: invoice.id,
+        subscription_id: invoice.subscription_id 
+      })
+      return
+    }
+
+    const { organization_id, donor_email, donor_name, amount_cents } = subResult.rows[0]
+
+    switch (event.type) {
+      case 'invoice.created':
+        // Store the new invoice
+        await db.execute(
+          `INSERT INTO subscription_invoices 
+           (organization_id, square_subscription_id, square_invoice_id, 
+            amount_cents, currency, status, scheduled_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE 
+            status = VALUES(status),
+            updated_at = NOW()`,
+          [
+            organization_id,
+            invoice.subscription_id,
+            invoice.id,
+            invoice.payment_requests?.[0]?.computed_amount_money?.amount || amount_cents,
+            invoice.payment_requests?.[0]?.computed_amount_money?.currency || 'USD',
+            invoice.status,
+            invoice.scheduled_at
+          ]
+        )
+        logger.info("Subscription invoice created", { 
+          invoice_id: invoice.id 
+        })
+        break
+        
+      case 'invoice.updated':
+        // Update invoice status
+        await db.execute(
+          `UPDATE subscription_invoices 
+           SET status = ?, updated_at = NOW()
+           WHERE square_invoice_id = ?`,
+          [invoice.status, invoice.id]
+        )
+        logger.info("Subscription invoice updated", { 
+          invoice_id: invoice.id,
+          status: invoice.status 
+        })
+        break
+        
+      case 'invoice.payment_made':
+        // Mark invoice as paid
+        await db.execute(
+          `UPDATE subscription_invoices 
+           SET status = 'PAID', 
+               paid_at = NOW(),
+               square_payment_id = ?,
+               updated_at = NOW()
+           WHERE square_invoice_id = ?`,
+          [invoice.payment_ids?.[0] || null, invoice.id]
+        )
+        
+        // Create a donation record for the recurring payment
+        await db.execute(
+          `INSERT INTO donations 
+           (organization_id, amount, currency, donor_name, donor_email, 
+            square_payment_id, status, is_recurring, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed', true, NOW())`,
+          [
+            organization_id,
+            amount_cents / 100, // Convert cents to dollars
+            'USD',
+            donor_name,
+            donor_email,
+            invoice.payment_ids?.[0] || null
+          ]
+        )
+        
+        logger.info("Subscription payment successful and donation recorded", {
+          invoice_id: invoice.id,
+          subscription_id: invoice.subscription_id,
+          amount: amount_cents / 100
+        })
+        break
+        
+      case 'invoice.canceled':
+        // Mark invoice as canceled
+        await db.execute(
+          `UPDATE subscription_invoices 
+           SET status = 'CANCELED', updated_at = NOW()
+           WHERE square_invoice_id = ?`,
+          [invoice.id]
+        )
+        logger.info("Subscription invoice canceled", { 
+          invoice_id: invoice.id 
+        })
+        break
+    }
+  } catch (error) {
+    logger.error("Error handling invoice event", { 
+      error, 
+      event_type: event.type,
+      invoice_id: invoice.id 
+    })
+  }
 }

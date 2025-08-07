@@ -9,7 +9,6 @@
     "lint": "next lint",
     "init-db": "node scripts/init-db.mjs",
     "migrate:stripe": "tsx src/lib/stripe-subscription-schema.ts"
-   
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.835.0",
