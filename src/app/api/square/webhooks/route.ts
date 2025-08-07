@@ -30,19 +30,15 @@ interface WebhookPayload {
 }
 
 // Webhook signature verification
-function verifyWebhookSignature(body: string, signature: string, webhookSignatureKey: string): boolean {
+function verifyWebhookSignature(body: string, signature: string, webhookSignatureKey: string, url: string): boolean {
   try {
-    // Square webhook signature format: "sha1=<hash>"
-    if (!signature.startsWith('sha1=')) {
-      return false
-    }
+    // Square uses HMAC-SHA256 and includes the URL in the signature
+    const stringToSign = url + body
+    const hash = createHmac('sha256', webhookSignatureKey)
+      .update(stringToSign, 'utf8')
+      .digest('base64')
     
-    const hash = signature.substring(5) // Remove "sha1=" prefix
-    const expectedHash = createHmac('sha1', webhookSignatureKey)
-      .update(body, 'utf8')
-      .digest('hex')
-    
-    return hash === expectedHash
+    return hash === signature
   } catch (error) {
     logger.error("Error verifying webhook signature", { error })
     return false
@@ -64,13 +60,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Get signature from headers
-    const signature = request.headers.get('x-square-signature')
+    const signature = request.headers.get('x-square-hmacsha256-signature')
     const webhookSignatureKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY
 
     // Verify signature if we have the signature key configured
     if (webhookSignatureKey && signature) {
-      if (!verifyWebhookSignature(rawBody, signature, webhookSignatureKey)) {
-        logger.warn("Invalid webhook signature", { 
+const webhookUrl = process.env.SQUARE_WEBHOOK_URL || 'https://api.shulpad.com/api/square/webhooks'
+if (!verifyWebhookSignature(rawBody, signature, webhookSignatureKey, webhookUrl)) {
+          logger.warn("Invalid webhook signature", { 
           event_type: webhookEvent.type,
           event_id: webhookEvent.event_id 
         })
