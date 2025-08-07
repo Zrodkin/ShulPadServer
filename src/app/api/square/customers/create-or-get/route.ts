@@ -115,11 +115,14 @@ export async function POST(request: NextRequest) {
 
       if (searchResponse.data.customers && searchResponse.data.customers.length > 0) {
         existingCustomer = searchResponse.data.customers[0]
-        customerId = existingCustomer.id
-        logger.info("Found existing customer", { 
-          customer_id: customerId,
-          email: existingCustomer.email_address 
-        })
+        // FIX: Check that existingCustomer is not null before accessing properties
+        if (existingCustomer) {
+          customerId = existingCustomer.id
+          logger.info("Found existing customer", { 
+            customer_id: customerId,
+            email: existingCustomer.email_address 
+          })
+        }
       }
     } catch (searchError) {
       logger.warn("Error searching for customer, will create new", { error: searchError })
@@ -160,22 +163,20 @@ export async function POST(request: NextRequest) {
 
         const newCustomer = createResponse.data.customer
         customerId = newCustomer.id
+        existingCustomer = newCustomer
         
         logger.info("Created new customer", { 
           customer_id: customerId,
           email: newCustomer.email_address 
         })
 
-        // Store in database for tracking
+        // Store in database for new customers
         try {
           await db.execute(
             `INSERT INTO donor_customers 
              (organization_id, square_customer_id, email, given_name, family_name, 
               phone_number, reference_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-             ON DUPLICATE KEY UPDATE 
-             square_customer_id = VALUES(square_customer_id),
-             updated_at = NOW()`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
             [
               organization_id,
               customerId,
@@ -193,11 +194,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           customer_id: customerId,
-          email: newCustomer.email_address,
+          email: newCustomer.email_address || email,
           given_name: newCustomer.given_name,
           family_name: newCustomer.family_name,
           created: true,
-          message: "New customer created"
+          message: "Customer created successfully"
         })
 
       } catch (createError: any) {
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 3: Update existing customer if needed
-    if (existingCustomer && (given_name || family_name || phone_number)) {
+    if (existingCustomer && customerId && (given_name || family_name || phone_number)) {
       // Check if update is needed
       const needsUpdate = 
         (given_name && given_name !== existingCustomer.given_name) ||
@@ -299,9 +300,10 @@ export async function POST(request: NextRequest) {
       logger.warn("Failed to store/update customer record", { error: dbError })
     }
 
+    // Final response - customerId is guaranteed to be non-null here
     return NextResponse.json({
       success: true,
-      customer_id: customerId,
+      customer_id: customerId as string, // We know it's not null at this point
       email: existingCustomer?.email_address || email,
       given_name: existingCustomer?.given_name || given_name,
       family_name: existingCustomer?.family_name || family_name,
