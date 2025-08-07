@@ -5,41 +5,73 @@ import { createClient } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import axios from "axios";
 
-// API endpoint to handle preset amounts changes
+// API endpoint to handle kiosk settings changes (preset amounts and processing fees)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { organization_id, preset_amounts } = body;
+    const { 
+      organization_id, 
+      preset_amounts,
+      processing_fee_enabled,
+      processing_fee_percentage,
+      processing_fee_fixed_cents
+    } = body;
     
     if (!organization_id) {
       return NextResponse.json({ error: "Organization ID is required" }, { status: 400 });
     }
     
-    if (!preset_amounts || !Array.isArray(preset_amounts)) {
-      return NextResponse.json({ error: "Valid preset amounts array is required" }, { status: 400 });
-    }
-    
-    // Store the new preset amounts in database
+    // Store the settings in database
     const db = createClient();
     
     try {
+      // First, ensure the organization has a row in kiosk_settings
       await db.execute(
-        `UPDATE kiosk_settings 
-         SET preset_amounts = ?,
-             updated_at = NOW()
-         WHERE organization_id = ?`,
-        [preset_amounts, organization_id]
+        `INSERT INTO kiosk_settings (
+          organization_id, 
+          preset_amounts,
+          processing_fee_enabled,
+          processing_fee_percentage,
+          processing_fee_fixed_cents,
+          created_at, 
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE 
+          preset_amounts = IF(? IS NOT NULL, ?, preset_amounts),
+          processing_fee_enabled = IF(? IS NOT NULL, ?, processing_fee_enabled),
+          processing_fee_percentage = IF(? IS NOT NULL, ?, processing_fee_percentage),
+          processing_fee_fixed_cents = IF(? IS NOT NULL, ?, processing_fee_fixed_cents),
+          updated_at = NOW()`,
+        [
+          // INSERT values
+          organization_id,
+          preset_amounts ? JSON.stringify(preset_amounts) : null,
+          processing_fee_enabled !== undefined ? (processing_fee_enabled ? 1 : 0) : null,
+          processing_fee_percentage ?? null,
+          processing_fee_fixed_cents ?? null,
+          // UPDATE conditions - only update if value was provided
+          preset_amounts ? 1 : null,
+          preset_amounts ? JSON.stringify(preset_amounts) : null,
+          processing_fee_enabled !== undefined ? 1 : null,
+          processing_fee_enabled !== undefined ? (processing_fee_enabled ? 1 : 0) : null,
+          processing_fee_percentage !== undefined ? 1 : null,
+          processing_fee_percentage ?? null,
+          processing_fee_fixed_cents !== undefined ? 1 : null,
+          processing_fee_fixed_cents ?? null
+        ]
       );
       
-      logger.info(`Updated preset amounts for organization ${organization_id}`, {
-        count: preset_amounts.length,
-        amounts: preset_amounts
+      logger.info(`Updated kiosk settings for organization ${organization_id}`, {
+        preset_amounts: preset_amounts?.length,
+        processing_fee_enabled,
+        processing_fee_percentage,
+        processing_fee_fixed_cents
       });
       
-      // Trigger the catalog sync immediately if API_SECRET is available
-      if (process.env.API_SECRET) {
+      // Trigger catalog sync if preset amounts were updated and API_SECRET is available
+      if (preset_amounts && process.env.API_SECRET) {
         try {
-          // Use internal API call to sync the preset amounts
           const response = await axios.post(
             `${process.env.VERCEL_URL || 'http://localhost:3000'}/api/square/catalog/sync-preset-amounts`,
             { organization_id },
@@ -57,16 +89,15 @@ export async function POST(request: NextRequest) {
           
           return NextResponse.json({
             success: true,
-            message: "Preset amounts updated and synchronized with Square catalog",
+            message: "Settings updated and synchronized with Square catalog",
             sync_result: response.data
           });
         } catch (syncError) {
           logger.error(`Failed to trigger catalog sync for organization ${organization_id}`, { error: syncError });
           
-          // Return success for the preset amount update even if sync failed
           return NextResponse.json({
             success: true,
-            message: "Preset amounts updated but sync with Square catalog failed",
+            message: "Settings updated but Square catalog sync failed",
             sync_pending: true
           });
         }
@@ -74,15 +105,17 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({
         success: true,
-        message: "Preset amounts updated. Square catalog sync will happen during the next cron job.",
-        sync_pending: true
+        message: "Settings updated successfully",
+        sync_pending: preset_amounts ? true : false
       });
+      
     } catch (dbError) {
-      logger.error(`Database error updating preset amounts for organization ${organization_id}`, { error: dbError });
-      return NextResponse.json({ error: "Failed to update preset amounts" }, { status: 500 });
-    } 
+      logger.error(`Database error updating settings for organization ${organization_id}`, { error: dbError });
+      return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
+    }
+    
   } catch (error) {
-    logger.error("Error processing preset amounts update", { error });
+    logger.error("Error processing settings update", { error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
