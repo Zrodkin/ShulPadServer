@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from "next/server"
 import axios from "axios"
 import { createClient } from "@/lib/db"
 import { logger } from "@/lib/logger"
-import { v4 as uuidv4 } from "uuid"
 
 interface SquareError {
   category: string
@@ -15,10 +14,10 @@ interface SquareError {
 // GET - Check subscription status
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }  // ← FIXED: params is now a Promise
 ) {
   try {
-    const subscriptionId = params.id
+    const { id: subscriptionId } = await params  // ← FIXED: await the params
     const searchParams = request.nextUrl.searchParams
     const organizationId = searchParams.get("organization_id")
 
@@ -199,10 +198,10 @@ export async function GET(
 // DELETE - Cancel subscription
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }  // ← FIXED: params is now a Promise
 ) {
   try {
-    const subscriptionId = params.id
+    const { id: subscriptionId } = await params  // ← FIXED: await the params
     const body = await request.json()
     const { organization_id, reason } = body
 
@@ -267,18 +266,18 @@ export async function DELETE(
       try {
         await db.execute(
           `UPDATE donor_subscriptions 
-           SET status = ?, canceled_date = ?, updated_at = NOW()
+           SET status = ?, canceled_at = NOW(), cancel_reason = ?, updated_at = NOW()
            WHERE square_subscription_id = ?`,
-          ["CANCELED", subscription.canceled_date || new Date().toISOString(), subscriptionId]
+          ["CANCELED", reason || "User canceled", subscriptionId]
         )
 
-        // Also log the cancellation reason if provided
+        // Also log the cancellation event
         if (reason) {
           await db.execute(
             `INSERT INTO subscription_events 
-             (organization_id, subscription_id, event_type, event_data, created_at)
-             VALUES (?, ?, 'CANCELLATION', ?, NOW())`,
-            [organization_id, subscriptionId, JSON.stringify({ reason })]
+             (square_subscription_id, event_type, event_data, processed_at)
+             VALUES (?, 'MANUAL_CANCELLATION', ?, NOW())`,
+            [subscriptionId, JSON.stringify({ reason, canceled_by: 'api' })]
           )
         }
       } catch (dbError) {
