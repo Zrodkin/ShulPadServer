@@ -1,4 +1,4 @@
-// src/app/api/hooks/preset-amounts-changed/route.ts
+// src/app/api/hooks-preset-amounts-changed/route.ts
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/db";
@@ -17,7 +17,16 @@ export async function POST(request: NextRequest) {
       processing_fee_fixed_cents
     } = body;
     
+    logger.info("Received kiosk settings update request", {
+      organization_id,
+      preset_amounts_count: preset_amounts?.length,
+      processing_fee_enabled,
+      processing_fee_percentage,
+      processing_fee_fixed_cents
+    });
+    
     if (!organization_id) {
+      logger.error("Missing organization_id in request");
       return NextResponse.json({ error: "Organization ID is required" }, { status: 400 });
     }
     
@@ -25,9 +34,56 @@ export async function POST(request: NextRequest) {
     const db = createClient();
     
     try {
-      // First, ensure the organization has a row in kiosk_settings
-      await db.execute(
-        `INSERT INTO kiosk_settings (
+      // Build the SQL query with proper handling of undefined values
+      const insertValues = [];
+      const updateConditions = [];
+      const updateValues = [];
+      
+      // Always include organization_id for INSERT
+      insertValues.push(organization_id);
+      
+      // Handle preset_amounts
+      if (preset_amounts !== undefined && preset_amounts !== null) {
+        insertValues.push(JSON.stringify(preset_amounts));
+        updateConditions.push("preset_amounts = ?");
+        updateValues.push(JSON.stringify(preset_amounts));
+      } else {
+        insertValues.push(null);
+      }
+      
+      // Handle processing_fee_enabled
+      if (processing_fee_enabled !== undefined && processing_fee_enabled !== null) {
+        insertValues.push(processing_fee_enabled ? 1 : 0);
+        updateConditions.push("processing_fee_enabled = ?");
+        updateValues.push(processing_fee_enabled ? 1 : 0);
+      } else {
+        insertValues.push(null);
+      }
+      
+      // Handle processing_fee_percentage
+      if (processing_fee_percentage !== undefined && processing_fee_percentage !== null) {
+        insertValues.push(processing_fee_percentage);
+        updateConditions.push("processing_fee_percentage = ?");
+        updateValues.push(processing_fee_percentage);
+      } else {
+        insertValues.push(null);
+      }
+      
+      // Handle processing_fee_fixed_cents
+      if (processing_fee_fixed_cents !== undefined && processing_fee_fixed_cents !== null) {
+        insertValues.push(processing_fee_fixed_cents);
+        updateConditions.push("processing_fee_fixed_cents = ?");
+        updateValues.push(processing_fee_fixed_cents);
+      } else {
+        insertValues.push(null);
+      }
+      
+      // Add timestamps
+      insertValues.push('NOW()', 'NOW()'); // These will be handled by MySQL
+      
+      // Build the complete query
+      let query = `
+        INSERT INTO kiosk_settings (
           organization_id, 
           preset_amounts,
           processing_fee_enabled,
@@ -37,32 +93,26 @@ export async function POST(request: NextRequest) {
           updated_at
         )
         VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-        ON DUPLICATE KEY UPDATE 
-          preset_amounts = IF(? IS NOT NULL, ?, preset_amounts),
-          processing_fee_enabled = IF(? IS NOT NULL, ?, processing_fee_enabled),
-          processing_fee_percentage = IF(? IS NOT NULL, ?, processing_fee_percentage),
-          processing_fee_fixed_cents = IF(? IS NOT NULL, ?, processing_fee_fixed_cents),
-          updated_at = NOW()`,
-        [
-          // INSERT values
-          organization_id,
-          preset_amounts ? JSON.stringify(preset_amounts) : null,
-          processing_fee_enabled !== undefined ? (processing_fee_enabled ? 1 : 0) : null,
-          processing_fee_percentage ?? null,
-          processing_fee_fixed_cents ?? null,
-          // UPDATE conditions - only update if value was provided
-          preset_amounts ? 1 : null,
-          preset_amounts ? JSON.stringify(preset_amounts) : null,
-          processing_fee_enabled !== undefined ? 1 : null,
-          processing_fee_enabled !== undefined ? (processing_fee_enabled ? 1 : 0) : null,
-          processing_fee_percentage !== undefined ? 1 : null,
-          processing_fee_percentage ?? null,
-          processing_fee_fixed_cents !== undefined ? 1 : null,
-          processing_fee_fixed_cents ?? null
-        ]
-      );
+      `;
       
-      logger.info(`Updated kiosk settings for organization ${organization_id}`, {
+      if (updateConditions.length > 0) {
+        query += ` ON DUPLICATE KEY UPDATE ${updateConditions.join(", ")}, updated_at = NOW()`;
+      } else {
+        query += ` ON DUPLICATE KEY UPDATE updated_at = NOW()`;
+      }
+      
+      // Execute the query
+      const allValues = [...insertValues.slice(0, -2), ...updateValues]; // Remove the NOW() placeholders
+      
+      logger.info("Executing SQL query", {
+        query: query.replace(/\s+/g, ' ').trim(),
+        values_count: allValues.length,
+        organization_id
+      });
+      
+      await db.execute(query, allValues);
+      
+      logger.info(`✅ Successfully updated kiosk settings for organization ${organization_id}`, {
         preset_amounts: preset_amounts?.length,
         processing_fee_enabled,
         processing_fee_percentage,
@@ -72,8 +122,12 @@ export async function POST(request: NextRequest) {
       // Trigger catalog sync if preset amounts were updated and API_SECRET is available
       if (preset_amounts && process.env.API_SECRET) {
         try {
+          const baseUrl = process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}` 
+            : 'http://localhost:3000';
+            
           const response = await axios.post(
-            `${process.env.VERCEL_URL || 'http://localhost:3000'}/api/square/catalog/sync-preset-amounts`,
+            `${baseUrl}/api/square/catalog/sync-preset-amounts`,
             { organization_id },
             {
               headers: {
@@ -90,7 +144,13 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: true,
             message: "Settings updated and synchronized with Square catalog",
-            sync_result: response.data
+            sync_result: response.data,
+            settings_updated: {
+              preset_amounts: preset_amounts?.length,
+              processing_fee_enabled,
+              processing_fee_percentage,
+              processing_fee_fixed_cents
+            }
           });
         } catch (syncError) {
           logger.error(`Failed to trigger catalog sync for organization ${organization_id}`, { error: syncError });
@@ -98,7 +158,13 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: true,
             message: "Settings updated but Square catalog sync failed",
-            sync_pending: true
+            sync_pending: true,
+            settings_updated: {
+              preset_amounts: preset_amounts?.length,
+              processing_fee_enabled,
+              processing_fee_percentage,
+              processing_fee_fixed_cents
+            }
           });
         }
       }
@@ -106,16 +172,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Settings updated successfully",
-        sync_pending: preset_amounts ? true : false
+        sync_pending: preset_amounts ? true : false,
+        settings_updated: {
+          preset_amounts: preset_amounts?.length,
+          processing_fee_enabled,
+          processing_fee_percentage,
+          processing_fee_fixed_cents
+        }
       });
       
-    } catch (dbError) {
-      logger.error(`Database error updating settings for organization ${organization_id}`, { error: dbError });
-      return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
+    } catch (dbError: any) {
+      logger.error(`Database error updating settings for organization ${organization_id}`, { 
+        error: dbError,
+        message: dbError.message,
+        code: dbError.code
+      });
+      
+      // Return more detailed error information
+      return NextResponse.json({ 
+        success: false,
+        error: "Failed to update settings",
+        details: dbError.message,
+        code: dbError.code
+      }, { status: 500 });
     }
     
-  } catch (error) {
-    logger.error("Error processing settings update", { error });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (error: any) {
+    logger.error("Error processing settings update", { 
+      error,
+      message: error.message 
+    });
+    
+    return NextResponse.json({ 
+      success: false,
+      error: "Internal server error",
+      details: error.message
+    }, { status: 500 });
   }
 }
