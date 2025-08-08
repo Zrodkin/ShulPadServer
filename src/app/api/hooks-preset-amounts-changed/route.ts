@@ -69,11 +69,11 @@ export async function POST(request: NextRequest) {
         insertValues.push(null);
       }
       
-      // Handle processing_fee_fixed_cents
+      // Handle processing_fee_fixed_cents - FIXED: Now using correct value
       if (processing_fee_fixed_cents !== undefined && processing_fee_fixed_cents !== null) {
         insertValues.push(processing_fee_fixed_cents);
         updateConditions.push("processing_fee_fixed_cents = ?");
-        updateValues.push(processing_fee_fixed_cents);
+        updateValues.push(processing_fee_fixed_cents); // ✅ FIXED: Using processing_fee_fixed_cents
       } else {
         insertValues.push(null);
       }
