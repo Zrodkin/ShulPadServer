@@ -137,6 +137,9 @@ async function getZmanimByCoordinates(latitude: number, longitude: number) {
             zmanimData = zmanimResponse.data
         }
         
+        logger.info('Available Zman fields:', Object.keys(zmanimData.Zman || {}))
+logger.info('Sample Zman data:', zmanimData.Zman)
+
         // Transform the response to match your app's expected format
         return NextResponse.json({
             success: true,
@@ -161,7 +164,9 @@ async function getZmanimByCoordinates(latitude: number, longitude: number) {
                 Chatzos: zmanimData.Zman?.Midday,
                 MinchaGedola: zmanimData.Zman?.MinchaGra,
                 MinchaKetana: zmanimData.Zman?.KetanaGra,
-                PlagHamincha: zmanimData.Zman?.PlagGra
+                PlagHamincha: zmanimData.Zman?.PlagGra,
+                 DawnAstronomical: zmanimData.Zman?.Dawn90,  
+    TfilaGRA: zmanimData.Zman?.TefilaGra 
             }
         })
     } catch (error: any) {
@@ -262,10 +267,14 @@ async function getZmanimByZip(zipCode: string) {
             } catch (e) {
                 logger.error('Failed to parse zmanim response', { data: zmanimResponse.data })
                 throw new Error('Invalid response from zmanim API')
+                
             }
         } else {
             zmanimData = zmanimResponse.data
         }
+
+        logger.info('Available Zman fields:', Object.keys(zmanimData.Zman || {}))
+logger.info('Sample Zman data:', zmanimData.Zman)
         
         return NextResponse.json({
             success: true,
@@ -291,7 +300,9 @@ async function getZmanimByZip(zipCode: string) {
                 Chatzos: zmanimData.Zman?.Midday,
                 MinchaGedola: zmanimData.Zman?.MinchaGra,
                 MinchaKetana: zmanimData.Zman?.KetanaGra,
-                PlagHamincha: zmanimData.Zman?.PlagGra
+                PlagHamincha: zmanimData.Zman?.PlagGra,
+                 DawnAstronomical: zmanimData.Zman?.Dawn90,  // Alot Hashachar
+    TfilaGRA: zmanimData.Zman?.TefilaGra  // Soph Zman Tefillah
             }
         })
     } catch (error: any) {
