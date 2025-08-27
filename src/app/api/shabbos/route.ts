@@ -1,16 +1,41 @@
 // app/api/shabbos/route.ts
 import { NextResponse, type NextRequest } from "next/server"
-import axios from "axios"
 import { logger } from "@/lib/logger"
+import { 
+    ComplexZmanimCalendar, 
+    GeoLocation, 
+    JewishCalendar,
+    JewishDate,
+    getZmanimJson
+} from "kosher-zmanim"
+import { find } from 'geo-tz'
 
-// Store these in environment variables
-const MYZMANIM_API = {
-    JSON_URL: 'https://api.myzmanim.com/engine1.json.aspx',
-    USER: process.env.MYZMANIM_USER || '0017348426',
-    KEY: process.env.MYZMANIM_KEY || 'b39acded156d0d01696651265ab3c6bb523934acc8c5fe5774db5e25cce79f8e0fab3eff48acfdc0'
+// Helper function to format date to ISO string
+function formatDateToISO(date: Date | null): string | null {
+    if (!date) return null
+    return date.toISOString()
 }
 
-// POST endpoint for getting zmanim by coordinates
+// Helper function to get Friday's date for candle lighting
+function getUpcomingFriday(): Date {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7
+    const friday = new Date(today)
+    friday.setDate(today.getDate() + daysUntilFriday)
+    return friday
+}
+
+// Helper function to get Saturday's date for Shabbos end
+function getUpcomingSaturday(): Date {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const daysUntilSaturday = (6 - dayOfWeek + 7) % 7 || 7
+    const saturday = new Date(today)
+    saturday.setDate(today.getDate() + daysUntilSaturday)
+    return saturday
+}
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json()
@@ -18,20 +43,23 @@ export async function POST(request: NextRequest) {
         
         logger.info('Shabbos API called', { action, latitude, longitude, zipCode })
         
-        // Route based on action
         if (action === 'coordinates') {
             return await getZmanimByCoordinates(latitude, longitude)
         } else if (action === 'zip') {
-            return await getZmanimByZip(zipCode)
+            // For ZIP codes, you'll need to convert to lat/long first
+            // You can use a geocoding service or maintain a ZIP database
+            return NextResponse.json({ 
+                error: 'ZIP code lookup requires geocoding service setup' 
+            }, { status: 501 })
         } else {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
         }
     } catch (error: any) {
-        logger.error('Zmanim API Error:', error.response?.data || error.message)
+        logger.error('Zmanim API Error:', error.message)
         return NextResponse.json({
             success: false,
             error: 'Failed to fetch zmanim',
-            details: error.response?.data || error.message
+            details: error.message
         }, { status: 500 })
     }
 }
@@ -42,282 +70,105 @@ async function getZmanimByCoordinates(latitude: number, longitude: number) {
     }
 
     try {
-        // Step 1: Search for LocationID using GPS coordinates with FORM POST
-        const searchUrl = `${MYZMANIM_API.JSON_URL}/searchGps`
+        // Get timezone from coordinates
+        const timezone = find(latitude, longitude)[0] || 'UTC'
         
-        // Create form data
-        const formData = new URLSearchParams()
-        formData.append('user', MYZMANIM_API.USER)
-        formData.append('key', MYZMANIM_API.KEY)
-        formData.append('coding', 'JSON')
-        formData.append('latitude', latitude.toFixed(6))
-        formData.append('longitude', longitude.toFixed(6))
-        
-        logger.info('Searching GPS with form POST', { 
-            url: searchUrl,
-            latitude: latitude.toFixed(6),
-            longitude: longitude.toFixed(6)
-        })
-
-        const searchResponse = await axios.post(
-            searchUrl,
-            formData.toString(),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                timeout: 10000
-            }
+        // Create GeoLocation with proper timezone
+        const geoLocation = new GeoLocation(
+            "Current Location",
+            latitude,
+            longitude,
+            0, // elevation in meters (optional)
+            timezone
         )
 
-        logger.info('Search response received', { 
-            status: searchResponse.status,
-            dataType: typeof searchResponse.data
-        })
+        // Get today's date for regular zmanim
+        const today = new Date()
+        const zmanimCalendar = new ComplexZmanimCalendar(geoLocation)
+        zmanimCalendar.setDate(today)
 
-        // Check if we got JSON or a string
-        let locationId
-        if (typeof searchResponse.data === 'string') {
-            try {
-                const parsed = JSON.parse(searchResponse.data)
-                locationId = parsed.LocationID
-            } catch (e) {
-                logger.error('Failed to parse search response', { data: searchResponse.data })
-                throw new Error('Invalid response from GPS search')
-            }
-        } else {
-            locationId = searchResponse.data.LocationID
-        }
+        // Get Friday for candle lighting
+        const friday = getUpcomingFriday()
+        const fridayCalendar = new ComplexZmanimCalendar(geoLocation)
+        fridayCalendar.setDate(friday)
 
-        if (!locationId) {
-            throw new Error('Location ID not found')
-        }
+        // Get Saturday for Shabbos end
+        const saturday = getUpcomingSaturday()
+        const saturdayCalendar = new ComplexZmanimCalendar(geoLocation)
+        saturdayCalendar.setDate(saturday)
 
-        logger.info(`Found LocationID: ${locationId}`)
+        // Check if today is actually Shabbos
+        const jewishCalendar = new JewishCalendar()
+        const isCurrentlyShabbos = jewishCalendar.getDayOfWeek() === 7 // Saturday
+        const isYomTov = jewishCalendar.isYomTov()
 
-        // Step 2: Get zmanim using LocationID with FORM POST
-        const zmanimUrl = `${MYZMANIM_API.JSON_URL}/getDay`
-        
-        const zmanimFormData = new URLSearchParams()
-        zmanimFormData.append('user', MYZMANIM_API.USER)
-        zmanimFormData.append('key', MYZMANIM_API.KEY)
-        zmanimFormData.append('coding', 'JSON')
-        zmanimFormData.append('language', 'en')
-        zmanimFormData.append('locationid', locationId)
-        zmanimFormData.append('inputdate', new Date().toISOString().split('T')[0])
-
-        logger.info('Fetching zmanim with form POST', { 
-            url: zmanimUrl,
-            locationId: locationId
-        })
-
-        const zmanimResponse = await axios.post(
-            zmanimUrl,
-            zmanimFormData.toString(),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                timeout: 10000
-            }
-        )
-
-        // Parse response if it's a string
-        let zmanimData
-        if (typeof zmanimResponse.data === 'string') {
-            try {
-                zmanimData = JSON.parse(zmanimResponse.data)
-            } catch (e) {
-                logger.error('Failed to parse zmanim response', { data: zmanimResponse.data })
-                throw new Error('Invalid response from zmanim API')
-            }
-        } else {
-            zmanimData = zmanimResponse.data
-        }
-        
-        logger.info('Available Zman fields:', Object.keys(zmanimData.Zman || {}))
-logger.info('Sample Zman data:', zmanimData.Zman)
-
-        // Transform the response to match your app's expected format
-        return NextResponse.json({
+        // Build response matching your existing format
+        const response = {
             success: true,
-            locationId: locationId,
+            locationId: `${latitude},${longitude}`, // Use coordinates as ID
             location: {
-                name: zmanimData.Place?.Name,
-                city: zmanimData.Place?.City,
-                state: zmanimData.Place?.State
+                name: "Current Location",
+                city: null, // Would need geocoding service for city name
+                state: null, // Would need geocoding service for state
+                zipCode: null
             },
-            date: zmanimData.Time?.DateCivil,
-            isShabbos: zmanimData.Time?.IsShabbos || false,
-            isYomTov: zmanimData.Time?.IsYomTov || false,
-          zmanim: {
-    CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
-    ShabbosEnds: zmanimData.Zman?.NightShabbos || zmanimData.Zman?.Night72,
-    Sunrise: zmanimData.Zman?.SunriseDefault,
-    Sunset: zmanimData.Zman?.SunsetDefault,
-    Tzais: zmanimData.Zman?.Night72fix,
-    Tzais72: zmanimData.Zman?.Night72,
-    ShachrisGRA: zmanimData.Zman?.ShemaGra,      // Keep field name, but map to Shema time
-    ShachrisMGA: zmanimData.Zman?.ShemaMA72,     // Keep field name, but map to Shema time
-    TfilaGRA: zmanimData.Zman?.ShachrisGra,      // Map to Shachris (prayer) time
-    TfilaMGA: zmanimData.Zman?.ShachrisMA72,     // Map to Shachris (prayer) time
-    Chatzos: zmanimData.Zman?.Midday,
-    MinchaGedola: zmanimData.Zman?.MinchaGra,
-    MinchaKetana: zmanimData.Zman?.KetanaGra,
-    PlagHamincha: zmanimData.Zman?.PlagGra,
-    DawnAstronomical: zmanimData.Zman?.Dawn90    // Alot Hashachar
-}
-        })
-    } catch (error: any) {
-        logger.error('Zmanim coordinates error:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status
-        })
-        
-        return NextResponse.json({
-            success: false,
-            error: 'Failed to fetch zmanim',
-            details: error.response?.data || error.message
-        }, { status: 500 })
-    }
-}
-
-async function getZmanimByZip(zipCode: string) {
-    if (!zipCode) {
-        return NextResponse.json({ error: 'ZIP code required' }, { status: 400 })
-    }
-
-    try {
-        // Step 1: Search by postal code with FORM POST
-        const searchUrl = `${MYZMANIM_API.JSON_URL}/searchPostal`
-        
-        const formData = new URLSearchParams()
-        formData.append('user', MYZMANIM_API.USER)
-        formData.append('key', MYZMANIM_API.KEY)
-        formData.append('coding', 'JSON')
-        formData.append('query', zipCode)
-
-        logger.info('Searching postal code with form POST', { 
-            url: searchUrl,
-            zipCode: zipCode
-        })
-
-        const searchResponse = await axios.post(
-            searchUrl,
-            formData.toString(),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                timeout: 10000
-            }
-        )
-
-        // Parse response if it's a string
-        let locationId
-        if (typeof searchResponse.data === 'string') {
-            try {
-                const parsed = JSON.parse(searchResponse.data)
-                locationId = parsed.LocationID
-            } catch (e) {
-                logger.error('Failed to parse postal search response', { data: searchResponse.data })
-                throw new Error('Invalid response from postal search')
-            }
-        } else {
-            locationId = searchResponse.data.LocationID
-        }
-
-        if (!locationId) {
-            throw new Error('Location not found for ZIP code')
-        }
-
-        logger.info(`Found LocationID for ZIP ${zipCode}: ${locationId}`)
-
-        // Step 2: Get zmanim using LocationID (same as coordinates method)
-        const zmanimUrl = `${MYZMANIM_API.JSON_URL}/getDay`
-        
-        const zmanimFormData = new URLSearchParams()
-        zmanimFormData.append('user', MYZMANIM_API.USER)
-        zmanimFormData.append('key', MYZMANIM_API.KEY)
-        zmanimFormData.append('coding', 'JSON')
-        zmanimFormData.append('language', 'en')
-        zmanimFormData.append('locationid', locationId)
-        zmanimFormData.append('inputdate', new Date().toISOString().split('T')[0])
-
-        const zmanimResponse = await axios.post(
-            zmanimUrl,
-            zmanimFormData.toString(),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                timeout: 10000
-            }
-        )
-
-        // Parse response if it's a string
-        let zmanimData
-        if (typeof zmanimResponse.data === 'string') {
-            try {
-                zmanimData = JSON.parse(zmanimResponse.data)
-            } catch (e) {
-                logger.error('Failed to parse zmanim response', { data: zmanimResponse.data })
-                throw new Error('Invalid response from zmanim API')
+            date: today.toISOString().split('T')[0],
+            isShabbos: isCurrentlyShabbos,
+            isYomTov: isYomTov,
+            zmanim: {
+                // Shabbos times (from Friday/Saturday calendars)
+                CandleLighting: formatDateToISO(fridayCalendar.getCandleLighting()),
+                ShabbosEnds: formatDateToISO(saturdayCalendar.getTzais72()),
                 
+                // Today's zmanim
+                Sunrise: formatDateToISO(zmanimCalendar.getSunrise()),
+                Sunset: formatDateToISO(zmanimCalendar.getSunset()),
+                Tzais: formatDateToISO(zmanimCalendar.getTzais()),
+                Tzais72: formatDateToISO(zmanimCalendar.getTzais72()),
+                
+                // Shema and Tefila times
+                ShachrisGRA: formatDateToISO(zmanimCalendar.getSofZmanShmaGRA()),
+                ShachrisMGA: formatDateToISO(zmanimCalendar.getSofZmanShmaMGA()),
+                TfilaGRA: formatDateToISO(zmanimCalendar.getSofZmanTfilaGRA()),
+                TfilaMGA: formatDateToISO(zmanimCalendar.getSofZmanTfilaMGA()),
+                
+                // Other daily zmanim
+                Chatzos: formatDateToISO(zmanimCalendar.getChatzos()),
+                MinchaGedola: formatDateToISO(zmanimCalendar.getMinchaGedola(
+                    zmanimCalendar.getSunrise(), 
+                    zmanimCalendar.getSunset()
+                )),
+                MinchaKetana: formatDateToISO(zmanimCalendar.getMinchaKetana(
+                    zmanimCalendar.getSunrise(), 
+                    zmanimCalendar.getSunset()
+                )),
+                PlagHamincha: formatDateToISO(zmanimCalendar.getPlagHamincha(
+                    zmanimCalendar.getSunrise(), 
+                    zmanimCalendar.getSunset()
+                )),
+                DawnAstronomical: formatDateToISO(zmanimCalendar.getAlos72()) // Alot Hashachar
             }
-        } else {
-            zmanimData = zmanimResponse.data
         }
 
-        logger.info('Available Zman fields:', Object.keys(zmanimData.Zman || {}))
-logger.info('Sample Zman data:', zmanimData.Zman)
-        
-        return NextResponse.json({
-            success: true,
-            locationId: locationId,
-            location: {
-                name: zmanimData.Place?.Name,
-                city: zmanimData.Place?.City,
-                state: zmanimData.Place?.State,
-                zipCode: zmanimData.Place?.PostalCode || zipCode
-            },
-            date: zmanimData.Time?.DateCivil,
-            isShabbos: zmanimData.Time?.IsShabbos || false,
-            isYomTov: zmanimData.Time?.IsYomTov || false,
-           zmanim: {
-    CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
-    ShabbosEnds: zmanimData.Zman?.NightShabbos || zmanimData.Zman?.Night72,
-    Sunrise: zmanimData.Zman?.SunriseDefault,
-    Sunset: zmanimData.Zman?.SunsetDefault,
-    Tzais: zmanimData.Zman?.Night72fix,
-    Tzais72: zmanimData.Zman?.Night72,
-    ShachrisGRA: zmanimData.Zman?.ShemaGra,      // Keep field name, but map to Shema time
-    ShachrisMGA: zmanimData.Zman?.ShemaMA72,     // Keep field name, but map to Shema time
-    TfilaGRA: zmanimData.Zman?.ShachrisGra,      // Map to Shachris (prayer) time
-    TfilaMGA: zmanimData.Zman?.ShachrisMA72,     // Map to Shachris (prayer) time
-    Chatzos: zmanimData.Zman?.Midday,
-    MinchaGedola: zmanimData.Zman?.MinchaGra,
-    MinchaKetana: zmanimData.Zman?.KetanaGra,
-    PlagHamincha: zmanimData.Zman?.PlagGra,
-    DawnAstronomical: zmanimData.Zman?.Dawn90    // Alot Hashachar
-}
+        logger.info('Zmanim calculated successfully', {
+            latitude,
+            longitude,
+            candleLighting: response.zmanim.CandleLighting,
+            shabbosEnds: response.zmanim.ShabbosEnds
         })
+
+        return NextResponse.json(response)
+        
     } catch (error: any) {
-        logger.error('Zmanim ZIP error:', {
+        logger.error('Zmanim calculation error:', {
             message: error.message,
-            response: error.response?.data,
-            status: error.response?.status
+            stack: error.stack
         })
         
         return NextResponse.json({
             success: false,
-            error: 'Failed to fetch zmanim for ZIP code',
-            details: error.response?.data || error.message
+            error: 'Failed to calculate zmanim',
+            details: error.message
         }, { status: 500 })
     }
 }
