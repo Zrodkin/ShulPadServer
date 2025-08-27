@@ -152,22 +152,23 @@ logger.info('Sample Zman data:', zmanimData.Zman)
             date: zmanimData.Time?.DateCivil,
             isShabbos: zmanimData.Time?.IsShabbos || false,
             isYomTov: zmanimData.Time?.IsYomTov || false,
-            zmanim: {
-                CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
-                ShabbosEnds: zmanimData.Zman?.NightShabbos || zmanimData.Zman?.Night72,
-                Sunrise: zmanimData.Zman?.SunriseDefault,
-                Sunset: zmanimData.Zman?.SunsetDefault,
-                Tzais: zmanimData.Zman?.Night72fix,
-                Tzais72: zmanimData.Zman?.Night72,
-                ShachrisGRA: zmanimData.Zman?.ShachrisGra || zmanimData.Zman?.ShemaGra,
-                ShachrisMGA: zmanimData.Zman?.ShachrisMA72 || zmanimData.Zman?.ShemaMA72,
-                Chatzos: zmanimData.Zman?.Midday,
-                MinchaGedola: zmanimData.Zman?.MinchaGra,
-                MinchaKetana: zmanimData.Zman?.KetanaGra,
-                PlagHamincha: zmanimData.Zman?.PlagGra,
-                 DawnAstronomical: zmanimData.Zman?.Dawn90,  
-    TfilaGRA: zmanimData.Zman?.TefilaGra 
-            }
+          zmanim: {
+    CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
+    ShabbosEnds: zmanimData.Zman?.NightShabbos || zmanimData.Zman?.Night72,
+    Sunrise: zmanimData.Zman?.SunriseDefault,
+    Sunset: zmanimData.Zman?.SunsetDefault,
+    Tzais: zmanimData.Zman?.Night72fix,
+    Tzais72: zmanimData.Zman?.Night72,
+    ShachrisGRA: zmanimData.Zman?.ShemaGra,      // Keep field name, but map to Shema time
+    ShachrisMGA: zmanimData.Zman?.ShemaMA72,     // Keep field name, but map to Shema time
+    TfilaGRA: zmanimData.Zman?.ShachrisGra,      // Map to Shachris (prayer) time
+    TfilaMGA: zmanimData.Zman?.ShachrisMA72,     // Map to Shachris (prayer) time
+    Chatzos: zmanimData.Zman?.Midday,
+    MinchaGedola: zmanimData.Zman?.MinchaGra,
+    MinchaKetana: zmanimData.Zman?.KetanaGra,
+    PlagHamincha: zmanimData.Zman?.PlagGra,
+    DawnAstronomical: zmanimData.Zman?.Dawn90    // Alot Hashachar
+}
         })
     } catch (error: any) {
         logger.error('Zmanim coordinates error:', {
@@ -288,22 +289,23 @@ logger.info('Sample Zman data:', zmanimData.Zman)
             date: zmanimData.Time?.DateCivil,
             isShabbos: zmanimData.Time?.IsShabbos || false,
             isYomTov: zmanimData.Time?.IsYomTov || false,
-            zmanim: {
-                CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
-                ShabbosEnds: zmanimData.Zman?.NightShabbos || zmanimData.Zman?.Night72,
-                Sunrise: zmanimData.Zman?.SunriseDefault,
-                Sunset: zmanimData.Zman?.SunsetDefault,
-                Tzais: zmanimData.Zman?.Night72fix,
-                Tzais72: zmanimData.Zman?.Night72,
-                ShachrisGRA: zmanimData.Zman?.ShachrisGra || zmanimData.Zman?.ShemaGra,
-                ShachrisMGA: zmanimData.Zman?.ShachrisMA72 || zmanimData.Zman?.ShemaMA72,
-                Chatzos: zmanimData.Zman?.Midday,
-                MinchaGedola: zmanimData.Zman?.MinchaGra,
-                MinchaKetana: zmanimData.Zman?.KetanaGra,
-                PlagHamincha: zmanimData.Zman?.PlagGra,
-                 DawnAstronomical: zmanimData.Zman?.Dawn90,  // Alot Hashachar
-    TfilaGRA: zmanimData.Zman?.TefilaGra  // Soph Zman Tefillah
-            }
+           zmanim: {
+    CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
+    ShabbosEnds: zmanimData.Zman?.NightShabbos || zmanimData.Zman?.Night72,
+    Sunrise: zmanimData.Zman?.SunriseDefault,
+    Sunset: zmanimData.Zman?.SunsetDefault,
+    Tzais: zmanimData.Zman?.Night72fix,
+    Tzais72: zmanimData.Zman?.Night72,
+    ShachrisGRA: zmanimData.Zman?.ShemaGra,      // Keep field name, but map to Shema time
+    ShachrisMGA: zmanimData.Zman?.ShemaMA72,     // Keep field name, but map to Shema time
+    TfilaGRA: zmanimData.Zman?.ShachrisGra,      // Map to Shachris (prayer) time
+    TfilaMGA: zmanimData.Zman?.ShachrisMA72,     // Map to Shachris (prayer) time
+    Chatzos: zmanimData.Zman?.Midday,
+    MinchaGedola: zmanimData.Zman?.MinchaGra,
+    MinchaKetana: zmanimData.Zman?.KetanaGra,
+    PlagHamincha: zmanimData.Zman?.PlagGra,
+    DawnAstronomical: zmanimData.Zman?.Dawn90    // Alot Hashachar
+}
         })
     } catch (error: any) {
         logger.error('Zmanim ZIP error:', {
