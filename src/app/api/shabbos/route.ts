@@ -5,8 +5,7 @@ import { logger } from "@/lib/logger"
 
 // Store these in environment variables
 const MYZMANIM_API = {
-    BASE_URL: 'https://api.myzmanim.com/engine1.svc',
-    JSON_URL: 'https://api.myzmanim.com/engine1.json.aspx', // Alternative endpoint
+    JSON_URL: 'https://api.myzmanim.com/engine1.json.aspx',
     USER: process.env.MYZMANIM_USER || '0017348426',
     KEY: process.env.MYZMANIM_KEY || 'b39acded156d0d01696651265ab3c6bb523934acc8c5fe5774db5e25cce79f8e0fab3eff48acfdc0'
 }
@@ -32,7 +31,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: false,
             error: 'Failed to fetch zmanim',
-            details: error.response?.data?.ErrMsg || error.message
+            details: error.response?.data || error.message
         }, { status: 500 })
     }
 }
@@ -43,124 +42,100 @@ async function getZmanimByCoordinates(latitude: number, longitude: number) {
     }
 
     try {
-        // Try Method 1: Using GET request with query parameters (like the iOS app)
-        const searchUrl = `${MYZMANIM_API.BASE_URL}/searchGps`
-        const searchParams = new URLSearchParams({
-            User: MYZMANIM_API.USER,
-            Key: MYZMANIM_API.KEY,
-            Coding: 'JSON',
-            Latitude: latitude.toFixed(6),
-            Longitude: longitude.toFixed(6)
-        })
+        // Step 1: Search for LocationID using GPS coordinates with FORM POST
+        const searchUrl = `${MYZMANIM_API.JSON_URL}/searchGps`
         
-        logger.info('Searching GPS with GET request', { 
-            url: `${searchUrl}?${searchParams.toString()}` 
+        // Create form data
+        const formData = new URLSearchParams()
+        formData.append('user', MYZMANIM_API.USER)
+        formData.append('key', MYZMANIM_API.KEY)
+        formData.append('coding', 'JSON')
+        formData.append('latitude', latitude.toFixed(6))
+        formData.append('longitude', longitude.toFixed(6))
+        
+        logger.info('Searching GPS with form POST', { 
+            url: searchUrl,
+            latitude: latitude.toFixed(6),
+            longitude: longitude.toFixed(6)
         })
 
-        let searchResponse
-        try {
-            // First try GET request (like the iOS app does)
-            searchResponse = await axios.get(`${searchUrl}?${searchParams.toString()}`, {
+        const searchResponse = await axios.post(
+            searchUrl,
+            formData.toString(),
+            {
                 headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json'
                 },
                 timeout: 10000
-            })
-        } catch (getError: any) {
-            logger.warn('GET request failed, trying POST', { error: getError.message })
-            
-            // If GET fails, try POST with form data
-            searchResponse = await axios.post(
-                searchUrl,
-                searchParams.toString(),
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json'
-                    },
-                    timeout: 10000
-                }
-            )
-        }
+            }
+        )
 
         logger.info('Search response received', { 
-            data: searchResponse.data,
-            status: searchResponse.status 
+            status: searchResponse.status,
+            dataType: typeof searchResponse.data
         })
 
-        if (!searchResponse.data || !searchResponse.data.LocationID) {
-            // Try alternative: Use the JSON endpoint directly
-            logger.warn('No LocationID found, trying alternative JSON endpoint')
-            
-            const altUrl = `${MYZMANIM_API.JSON_URL}`
-            const altParams = new URLSearchParams({
-                coding: 'JSON',
-                language: 'en',
-                latitude: latitude.toFixed(6),
-                longitude: longitude.toFixed(6),
-                key: MYZMANIM_API.KEY,
-                user: MYZMANIM_API.USER,
-                inputdate: new Date().toISOString().split('T')[0]
-            })
-            
-            const altResponse = await axios.get(`${altUrl}?${altParams.toString()}`, {
-                headers: {
-                    'Accept': 'application/json'
-                },
-                timeout: 10000
-            })
-            
-            if (altResponse.data) {
-                return transformAlternativeResponse(altResponse.data)
+        // Check if we got JSON or a string
+        let locationId
+        if (typeof searchResponse.data === 'string') {
+            try {
+                const parsed = JSON.parse(searchResponse.data)
+                locationId = parsed.LocationID
+            } catch (e) {
+                logger.error('Failed to parse search response', { data: searchResponse.data })
+                throw new Error('Invalid response from GPS search')
             }
-            
+        } else {
+            locationId = searchResponse.data.LocationID
+        }
+
+        if (!locationId) {
             throw new Error('Location ID not found')
         }
 
-        const locationId = searchResponse.data.LocationID
         logger.info(`Found LocationID: ${locationId}`)
 
-        // Step 2: Get zmanim using LocationID
-        const zmanimUrl = `${MYZMANIM_API.BASE_URL}/getDay`
-        const zmanimParams = new URLSearchParams({
-            User: MYZMANIM_API.USER,
-            Key: MYZMANIM_API.KEY,
-            Coding: 'JSON',
-            Language: 'en',
-            LocationId: locationId,
-            InputDate: new Date().toISOString().split('T')[0]
+        // Step 2: Get zmanim using LocationID with FORM POST
+        const zmanimUrl = `${MYZMANIM_API.JSON_URL}/getDay`
+        
+        const zmanimFormData = new URLSearchParams()
+        zmanimFormData.append('user', MYZMANIM_API.USER)
+        zmanimFormData.append('key', MYZMANIM_API.KEY)
+        zmanimFormData.append('coding', 'JSON')
+        zmanimFormData.append('language', 'en')
+        zmanimFormData.append('locationid', locationId)
+        zmanimFormData.append('inputdate', new Date().toISOString().split('T')[0])
+
+        logger.info('Fetching zmanim with form POST', { 
+            url: zmanimUrl,
+            locationId: locationId
         })
 
-        logger.info('Fetching zmanim', { 
-            url: `${zmanimUrl}?${zmanimParams.toString()}` 
-        })
-
-        // Try GET first, then POST if it fails
-        let zmanimResponse
-        try {
-            zmanimResponse = await axios.get(`${zmanimUrl}?${zmanimParams.toString()}`, {
+        const zmanimResponse = await axios.post(
+            zmanimUrl,
+            zmanimFormData.toString(),
+            {
                 headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json'
                 },
                 timeout: 10000
-            })
-        } catch (getError: any) {
-            logger.warn('GET request for zmanim failed, trying POST', { error: getError.message })
-            
-            zmanimResponse = await axios.post(
-                zmanimUrl,
-                zmanimParams.toString(),
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json'
-                    },
-                    timeout: 10000
-                }
-            )
-        }
+            }
+        )
 
-        const zmanimData = zmanimResponse.data
+        // Parse response if it's a string
+        let zmanimData
+        if (typeof zmanimResponse.data === 'string') {
+            try {
+                zmanimData = JSON.parse(zmanimResponse.data)
+            } catch (e) {
+                logger.error('Failed to parse zmanim response', { data: zmanimResponse.data })
+                throw new Error('Invalid response from zmanim API')
+            }
+        } else {
+            zmanimData = zmanimResponse.data
+        }
         
         // Transform the response to match your app's expected format
         return NextResponse.json({
@@ -210,88 +185,87 @@ async function getZmanimByZip(zipCode: string) {
     }
 
     try {
-        // Step 1: Search by postal code
-        const searchUrl = `${MYZMANIM_API.BASE_URL}/searchPostal`
-        const searchParams = new URLSearchParams({
-            User: MYZMANIM_API.USER,
-            Key: MYZMANIM_API.KEY,
-            Coding: 'JSON',
-            Query: zipCode
+        // Step 1: Search by postal code with FORM POST
+        const searchUrl = `${MYZMANIM_API.JSON_URL}/searchPostal`
+        
+        const formData = new URLSearchParams()
+        formData.append('user', MYZMANIM_API.USER)
+        formData.append('key', MYZMANIM_API.KEY)
+        formData.append('coding', 'JSON')
+        formData.append('query', zipCode)
+
+        logger.info('Searching postal code with form POST', { 
+            url: searchUrl,
+            zipCode: zipCode
         })
 
-        logger.info('Searching postal code', { 
-            url: `${searchUrl}?${searchParams.toString()}` 
-        })
-
-        // Try GET first
-        let searchResponse
-        try {
-            searchResponse = await axios.get(`${searchUrl}?${searchParams.toString()}`, {
+        const searchResponse = await axios.post(
+            searchUrl,
+            formData.toString(),
+            {
                 headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json'
                 },
                 timeout: 10000
-            })
-        } catch (getError: any) {
-            logger.warn('GET request failed for postal search, trying POST', { error: getError.message })
-            
-            searchResponse = await axios.post(
-                searchUrl,
-                searchParams.toString(),
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json'
-                    },
-                    timeout: 10000
-                }
-            )
+            }
+        )
+
+        // Parse response if it's a string
+        let locationId
+        if (typeof searchResponse.data === 'string') {
+            try {
+                const parsed = JSON.parse(searchResponse.data)
+                locationId = parsed.LocationID
+            } catch (e) {
+                logger.error('Failed to parse postal search response', { data: searchResponse.data })
+                throw new Error('Invalid response from postal search')
+            }
+        } else {
+            locationId = searchResponse.data.LocationID
         }
 
-        if (!searchResponse.data || !searchResponse.data.LocationID) {
-            logger.error('Search response:', searchResponse.data)
+        if (!locationId) {
             throw new Error('Location not found for ZIP code')
         }
 
-        const locationId = searchResponse.data.LocationID
         logger.info(`Found LocationID for ZIP ${zipCode}: ${locationId}`)
 
         // Step 2: Get zmanim using LocationID (same as coordinates method)
-        const zmanimUrl = `${MYZMANIM_API.BASE_URL}/getDay`
-        const zmanimParams = new URLSearchParams({
-            User: MYZMANIM_API.USER,
-            Key: MYZMANIM_API.KEY,
-            Coding: 'JSON',
-            Language: 'en',
-            LocationId: locationId,
-            InputDate: new Date().toISOString().split('T')[0]
-        })
+        const zmanimUrl = `${MYZMANIM_API.JSON_URL}/getDay`
+        
+        const zmanimFormData = new URLSearchParams()
+        zmanimFormData.append('user', MYZMANIM_API.USER)
+        zmanimFormData.append('key', MYZMANIM_API.KEY)
+        zmanimFormData.append('coding', 'JSON')
+        zmanimFormData.append('language', 'en')
+        zmanimFormData.append('locationid', locationId)
+        zmanimFormData.append('inputdate', new Date().toISOString().split('T')[0])
 
-        let zmanimResponse
-        try {
-            zmanimResponse = await axios.get(`${zmanimUrl}?${zmanimParams.toString()}`, {
+        const zmanimResponse = await axios.post(
+            zmanimUrl,
+            zmanimFormData.toString(),
+            {
                 headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json'
                 },
                 timeout: 10000
-            })
-        } catch (getError: any) {
-            logger.warn('GET request for zmanim failed, trying POST', { error: getError.message })
-            
-            zmanimResponse = await axios.post(
-                zmanimUrl,
-                zmanimParams.toString(),
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json'
-                    },
-                    timeout: 10000
-                }
-            )
-        }
+            }
+        )
 
-        const zmanimData = zmanimResponse.data
+        // Parse response if it's a string
+        let zmanimData
+        if (typeof zmanimResponse.data === 'string') {
+            try {
+                zmanimData = JSON.parse(zmanimResponse.data)
+            } catch (e) {
+                logger.error('Failed to parse zmanim response', { data: zmanimResponse.data })
+                throw new Error('Invalid response from zmanim API')
+            }
+        } else {
+            zmanimData = zmanimResponse.data
+        }
         
         return NextResponse.json({
             success: true,
@@ -333,34 +307,4 @@ async function getZmanimByZip(zipCode: string) {
             details: error.response?.data || error.message
         }, { status: 500 })
     }
-}
-
-// Helper function to transform alternative API response format
-function transformAlternativeResponse(data: any) {
-    return NextResponse.json({
-        success: true,
-        locationId: data.LocationID || 'unknown',
-        location: {
-            name: data.Place?.Name,
-            city: data.Place?.City,
-            state: data.Place?.State
-        },
-        date: data.Time?.DateCivil,
-        isShabbos: data.Time?.IsShabbos || false,
-        isYomTov: data.Time?.IsYomTov || false,
-        zmanim: {
-            CandleLighting: data.Zman?.Candles || data.Zman?.Candles18,
-            ShabbosEnds: data.Zman?.NightShabbos || data.Zman?.Night72,
-            Sunrise: data.Zman?.SunriseDefault,
-            Sunset: data.Zman?.SunsetDefault,
-            Tzais: data.Zman?.Night72fix,
-            Tzais72: data.Zman?.Night72,
-            ShachrisGRA: data.Zman?.ShachrisGra || data.Zman?.ShemaGra,
-            ShachrisMGA: data.Zman?.ShachrisMA72 || data.Zman?.ShemaMA72,
-            Chatzos: data.Zman?.Midday,
-            MinchaGedola: data.Zman?.MinchaGra,
-            MinchaKetana: data.Zman?.KetanaGra,
-            PlagHamincha: data.Zman?.PlagGra
-        }
-    })
 }
