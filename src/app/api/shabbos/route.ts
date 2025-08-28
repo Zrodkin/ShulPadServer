@@ -80,6 +80,9 @@ interface TimeData {
 }
 
 interface ZmanData {
+    // Current time (if available)
+    CurrentTime?: string;
+    
     // Dawn times
     Dawn90?: string;
     Dawn72?: string;
@@ -354,7 +357,7 @@ function formatZmanim(zman: ZmanData | undefined): FormattedZmanim {
     
     return {
         candleLighting: {
-            standard18: safeString(zman.Candles18 || zman.Candles),
+            standard18: safeString(zman.Candles || zman.Candles18),
             minutes20: safeString(zman.Candles20),
             minutes22: safeString(zman.Candles22),
             minutes30: safeString(zman.Candles30),
@@ -948,6 +951,9 @@ async function fetchZmanimData(
         
         // Raw zmanim data (all fields as received from API)
         rawZmanim: zmanimData.Zman || {},
+        
+        // Current time if available (useful for real-time displays)
+        currentTime: zmanimData.Zman?.CurrentTime || null,
         
         // Legacy format for backward compatibility
         legacyFormat: {
