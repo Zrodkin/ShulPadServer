@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import axios from "axios"
 import { logger } from "@/lib/logger"
+import moment from 'moment-timezone'
 
 // Store these in environment variables
 const MYZMANIM_API = {
@@ -214,6 +215,151 @@ interface MyZmanimAPIResponse {
     Place?: PlaceData;
     Time?: TimeData;
     Zman?: ZmanData;
+}
+
+// Add this helper function after your interfaces/types section
+function getTimezoneForLocation(placeData: any): string {
+    // Map state abbreviations to timezones for US locations
+    const stateTimezones: { [key: string]: string } = {
+        // Eastern Time
+        'NY': 'America/New_York', 'NJ': 'America/New_York', 'PA': 'America/New_York',
+        'CT': 'America/New_York', 'MA': 'America/New_York', 'VT': 'America/New_York',
+        'NH': 'America/New_York', 'ME': 'America/New_York', 'RI': 'America/New_York',
+        'DE': 'America/New_York', 'MD': 'America/New_York', 'DC': 'America/New_York',
+        'VA': 'America/New_York', 'WV': 'America/New_York', 'NC': 'America/New_York',
+        'SC': 'America/New_York', 'GA': 'America/New_York', 'FL': 'America/New_York',
+        'OH': 'America/New_York', 'MI': 'America/New_York', 'IN': 'America/New_York',
+        
+        // Central Time
+        'TX': 'America/Chicago', 'OK': 'America/Chicago', 'AR': 'America/Chicago',
+        'LA': 'America/Chicago', 'MS': 'America/Chicago', 'AL': 'America/Chicago',
+        'TN': 'America/Chicago', 'KY': 'America/Chicago', 'IL': 'America/Chicago',
+        'WI': 'America/Chicago', 'MN': 'America/Chicago', 'IA': 'America/Chicago',
+        'MO': 'America/Chicago', 'KS': 'America/Chicago', 'NE': 'America/Chicago',
+        'SD': 'America/Chicago', 'ND': 'America/Chicago',
+        
+        // Mountain Time
+        'CO': 'America/Denver', 'NM': 'America/Denver', 'WY': 'America/Denver',
+        'MT': 'America/Denver', 'UT': 'America/Denver', 'ID': 'America/Denver',
+        
+        // Mountain Time (no DST)
+        'AZ': 'America/Phoenix',
+        
+        // Pacific Time
+        'CA': 'America/Los_Angeles', 'NV': 'America/Los_Angeles',
+        'OR': 'America/Los_Angeles', 'WA': 'America/Los_Angeles',
+        
+        // Alaska & Hawaii
+        'AK': 'America/Anchorage',
+        'HI': 'Pacific/Honolulu'
+    }
+    
+    // Handle US locations
+    if (placeData.Country === 'USA' || placeData.Country === 'US') {
+        const state = placeData.State
+        if (state && stateTimezones[state]) {
+            return stateTimezones[state]
+        }
+        // Default to Eastern if state not found
+        return 'America/New_York'
+    }
+    
+    // Handle other countries (add more as needed)
+    const countryTimezones: { [key: string]: string } = {
+        'Israel': 'Asia/Jerusalem',
+        'UK': 'Europe/London',
+        'Canada': 'America/Toronto', // Default to Eastern, could be refined by province
+        'Australia': 'Australia/Sydney', // Default to Sydney, could be refined by state
+        'France': 'Europe/Paris',
+        'Germany': 'Europe/Berlin',
+        // Add more countries as needed
+    }
+    
+    if (placeData.Country && countryTimezones[placeData.Country]) {
+        return countryTimezones[placeData.Country]
+    }
+    
+    // Default fallback
+    return 'America/New_York'
+}
+
+// Add this helper function to convert UTC times to local
+function convertTimesToLocal(zmanimData: any, timezone: string): any {
+    const convertedData = { ...zmanimData }
+    
+    // Convert all Zman times
+    if (convertedData.Zman) {
+        Object.keys(convertedData.Zman).forEach(key => {
+            const value = convertedData.Zman[key]
+            // Check if it's an ISO date string with time
+            if (typeof value === 'string' && value.includes('T')) {
+                // Parse as UTC and convert to local timezone
+                const utcMoment = moment.utc(value)
+                const localMoment = utcMoment.tz(timezone)
+                // Return in ISO format with timezone offset
+                convertedData.Zman[key] = localMoment.format()
+            }
+        })
+    }
+    
+    return convertedData
+}
+
+// MODIFY your existing formatZmanimResponse function
+// Find where you build the response and add timezone conversion
+function formatZmanimResponse(zmanimData: any): NextResponse {
+    try {
+        // Get the timezone for this location
+        const timezone = getTimezoneForLocation(zmanimData.Place || {})
+        logger.info('🌍 Detected timezone', { 
+            location: zmanimData.Place?.Name,
+            state: zmanimData.Place?.State,
+            timezone 
+        })
+        
+        // Convert all times to local timezone
+        const localZmanimData = convertTimesToLocal(zmanimData, timezone)
+        
+        // Add timezone info to response
+        const response = {
+            success: true,
+            locationId: localZmanimData.Place?.LocationID,
+            timezone: timezone, // Include timezone in response
+            location: {
+                name: localZmanimData.Place?.Name,
+                city: localZmanimData.Place?.City,
+                state: localZmanimData.Place?.State,
+                country: localZmanimData.Place?.Country,
+                zipCode: localZmanimData.Place?.PostalCode,
+            },
+            // Add current time in both UTC and local for debugging
+            currentTime: localZmanimData.Zman?.CurrentTime,
+            currentTimeUTC: zmanimData.Zman?.CurrentTime,
+            currentTimeLocal: localZmanimData.Zman?.CurrentTime ? 
+                moment.tz(localZmanimData.Zman.CurrentTime, timezone).format('YYYY-MM-DD HH:mm:ss z') : null,
+            
+            // Your existing zmanim structure
+            //zmanim: buildZmanimFromAPIResponse(localZmanimData),
+            rawZmanim: localZmanimData.Zman,
+            
+            // Status flags remain the same
+            status: {
+                isShabbos: localZmanimData.Time?.IsShabbos || false,
+                isYomTov: localZmanimData.Time?.IsYomTov || false,
+                isErevShabbos: localZmanimData.Time?.IsErevShabbos || false,
+                isErevYomTov: localZmanimData.Time?.IsErevYomTov || false,
+                // ... rest of your status flags
+            }
+        }
+        
+        return NextResponse.json(response)
+    } catch (error) {
+        logger.error('Error formatting response', { error })
+        return NextResponse.json({ 
+            success: false, 
+            error: 'Failed to format response' 
+        }, { status: 500 })
+    }
 }
 
 // Our structured response for backward compatibility
@@ -853,125 +999,129 @@ async function fetchZmanimData(
             }
         })
     }
-    
+    // Get timezone and convert times to local
+const timezone = getTimezoneForLocation(zmanimData.Place || {})
+const localZmanimData = convertTimesToLocal(zmanimData, timezone)
+
     // Build comprehensive response
     return NextResponse.json({
         success: true,
         locationId: locationId,
+        timezone: timezone,
         
         // Location information
         location: {
-            name: zmanimData.Place?.Name,
-            nameShort: zmanimData.Place?.NameShort,
-            city: zmanimData.Place?.City,
-            state: zmanimData.Place?.State,
-            country: zmanimData.Place?.Country,
-            county: zmanimData.Place?.County,
-            zipCode: zmanimData.Place?.PostalCode || zipCode,
-            airportCode: zmanimData.Place?.AirportCode,
-            cityHebrew: zmanimData.Place?.CityHebrew,
+            name: localZmanimData.Place?.Name,
+            nameShort: localZmanimData.Place?.NameShort,
+            city: localZmanimData.Place?.City,
+            state: localZmanimData.Place?.State,
+            country: localZmanimData.Place?.Country,
+            county: localZmanimData.Place?.County,
+            zipCode: localZmanimData.Place?.PostalCode || zipCode,
+            airportCode: localZmanimData.Place?.AirportCode,
+            cityHebrew: localZmanimData.Place?.CityHebrew,
             elevation: {
-                observer: zmanimData.Place?.ElevationObserver,
-                west: zmanimData.Place?.ElevationWest,
-                east: zmanimData.Place?.ElevationEast
+                observer: localZmanimData.Place?.ElevationObserver,
+                west: localZmanimData.Place?.ElevationWest,
+                east: localZmanimData.Place?.ElevationEast
             },
             settings: {
-                candlelightingMinutes: zmanimData.Place?.CandlelightingMinutes,
-                yakirDegreesDefault: zmanimData.Place?.YakirDegreesDefault,
-                observesDST: zmanimData.Place?.ObservesDST === 'Yes'
+                candlelightingMinutes: localZmanimData.Place?.CandlelightingMinutes,
+                yakirDegreesDefault: localZmanimData.Place?.YakirDegreesDefault,
+                observesDST: localZmanimData.Place?.ObservesDST === 'Yes'
             },
             direction: {
-                davenGC: zmanimData.Place?.DavenDirectionGC,
-                davenRL: zmanimData.Place?.DavenDirectionRL
+                davenGC: localZmanimData.Place?.DavenDirectionGC,
+                davenRL: localZmanimData.Place?.DavenDirectionRL
             }
         },
         
         // Date and time information
         dateInfo: {
             civil: {
-                date: zmanimData.Time?.DateCivil,
-                dateLong: zmanimData.Time?.DateCivilLong,
-                weekday: zmanimData.Time?.Weekday,
-                weekdayShort: zmanimData.Time?.WeekdayShort
+                date: localZmanimData.Time?.DateCivil,
+                dateLong: localZmanimData.Time?.DateCivilLong,
+                weekday: localZmanimData.Time?.Weekday,
+                weekdayShort: localZmanimData.Time?.WeekdayShort
             },
             jewish: {
-                date: zmanimData.Time?.DateJewish,
-                dateLong: zmanimData.Time?.DateJewishLong,
-                dateShort: zmanimData.Time?.DateJewishShort
+                date: localZmanimData.Time?.DateJewish,
+                dateLong: localZmanimData.Time?.DateJewishLong,
+                dateShort: localZmanimData.Time?.DateJewishShort
             },
             combined: {
-                fullLong: zmanimData.Time?.DateFullLong,
-                fullShort: zmanimData.Time?.DateFullShort,
-                semiLong: zmanimData.Time?.DateSemiLong,
-                semiShort: zmanimData.Time?.DateSemiShort
+                fullLong: localZmanimData.Time?.DateFullLong,
+                fullShort: localZmanimData.Time?.DateFullShort,
+                semiLong: localZmanimData.Time?.DateSemiLong,
+                semiShort: localZmanimData.Time?.DateSemiShort
             },
             torah: {
-                parsha: zmanimData.Time?.Parsha,
-                parshaShort: zmanimData.Time?.ParshaShort,
-                holiday: zmanimData.Time?.Holiday,
-                holidayShort: zmanimData.Time?.HolidayShort,
-                parshaAndHoliday: zmanimData.Time?.ParshaAndHoliday,
-                tomorrowParsha: zmanimData.Time?.TomorrowParsha,
-                tomorrowParshaOrHoliday: zmanimData.Time?.TomorrowParshaOrHoliday,
-                omer: zmanimData.Time?.Omer,
+                parsha: localZmanimData.Time?.Parsha,
+                parshaShort: localZmanimData.Time?.ParshaShort,
+                holiday: localZmanimData.Time?.Holiday,
+                holidayShort: localZmanimData.Time?.HolidayShort,
+                parshaAndHoliday: localZmanimData.Time?.ParshaAndHoliday,
+                tomorrowParsha: localZmanimData.Time?.TomorrowParsha,
+                tomorrowParshaOrHoliday: localZmanimData.Time?.TomorrowParshaOrHoliday,
+                omer: localZmanimData.Time?.Omer,
                 dafYomi: {
-                    tract: zmanimData.Time?.DafYomiTract,
-                    page: zmanimData.Time?.DafYomiPage,
-                    full: zmanimData.Time?.DafYomi
+                    tract: localZmanimData.Time?.DafYomiTract,
+                    page: localZmanimData.Time?.DafYomiPage,
+                    full: localZmanimData.Time?.DafYomi
                 }
             },
-            isDST: zmanimData.Time?.DaylightTime === 1
+            isDST: localZmanimData.Time?.DaylightTime === 1
         },
         
         // Halachic status flags
         status: {
-            isShabbos: zmanimData.Time?.IsShabbos || false,
-            isYomTov: zmanimData.Time?.IsYomTov || false,
-            isCholHamoed: zmanimData.Time?.IsCholHamoed || false,
-            isYomKipper: zmanimData.Time?.IsYomKipper || false,
-            isTishaBav: zmanimData.Time?.IsTishaBav || false,
-            isErevTishaBav: zmanimData.Time?.IsErevTishaBav || false,
-            isShivaAsarBitammuz: zmanimData.Time?.IsShivaAsarBitammuz || false,
-            isTaanisEsther: zmanimData.Time?.IsTaanisEsther || false,
-            isTzomGedalia: zmanimData.Time?.IsTzomGedalia || false,
-            isAsaraBiteves: zmanimData.Time?.IsAsaraBiteves || false,
-            isFastDay: zmanimData.Time?.IsFastDay || false,
-            isErevPesach: zmanimData.Time?.IsErevPesach || false,
-            isRoshChodesh: zmanimData.Time?.IsRoshChodesh || false,
-            isTuBeshvat: zmanimData.Time?.IsTuBeshvat || false,
-            isErevShabbos: zmanimData.Time?.IsErevShabbos || false,
-            isErevYomTov: zmanimData.Time?.IsErevYomTov || false,
-            isErevYomKipper: zmanimData.Time?.IsErevYomKipper || false,
-            tonightIsYomTov: zmanimData.Time?.TonightIsYomTov || false,
-            tomorrowNightIsYomTov: zmanimData.Time?.TomorrowNightIsYomTov || false
+            isShabbos: localZmanimData.Time?.IsShabbos || false,
+            isYomTov: localZmanimData.Time?.IsYomTov || false,
+            isCholHamoed: localZmanimData.Time?.IsCholHamoed || false,
+            isYomKipper: localZmanimData.Time?.IsYomKipper || false,
+            isTishaBav: localZmanimData.Time?.IsTishaBav || false,
+            isErevTishaBav: localZmanimData.Time?.IsErevTishaBav || false,
+            isShivaAsarBitammuz: localZmanimData.Time?.IsShivaAsarBitammuz || false,
+            isTaanisEsther: localZmanimData.Time?.IsTaanisEsther || false,
+            isTzomGedalia: localZmanimData.Time?.IsTzomGedalia || false,
+            isAsaraBiteves: localZmanimData.Time?.IsAsaraBiteves || false,
+            isFastDay: localZmanimData.Time?.IsFastDay || false,
+            isErevPesach: localZmanimData.Time?.IsErevPesach || false,
+            isRoshChodesh: localZmanimData.Time?.IsRoshChodesh || false,
+            isTuBeshvat: localZmanimData.Time?.IsTuBeshvat || false,
+            isErevShabbos: localZmanimData.Time?.IsErevShabbos || false,
+            isErevYomTov: localZmanimData.Time?.IsErevYomTov || false,
+            isErevYomKipper: localZmanimData.Time?.IsErevYomKipper || false,
+            tonightIsYomTov: localZmanimData.Time?.TonightIsYomTov || false,
+            tomorrowNightIsYomTov: localZmanimData.Time?.TomorrowNightIsYomTov || false
         },
         
         // Formatted zmanim (organized by category)
-        zmanim: formatZmanim(zmanimData.Zman),
+        zmanim: formatZmanim(localZmanimData.Zman),
         
         // Raw zmanim data (all fields as received from API)
-        rawZmanim: zmanimData.Zman || {},
+        rawZmanim: localZmanimData.Zman || {},
         
         // Current time if available (useful for real-time displays)
-        currentTime: zmanimData.Zman?.CurrentTime || null,
+        currentTime: localZmanimData.Zman?.CurrentTime || null,
         
         // Legacy format for backward compatibility
         legacyFormat: {
-            CandleLighting: zmanimData.Zman?.Candles || zmanimData.Zman?.Candles18,
-            ShabbosEnds: zmanimData.Zman?.NightShabbos,
-            Sunrise: zmanimData.Zman?.SunriseDefault,
-            Sunset: zmanimData.Zman?.SunsetDefault,
-            Tzais: zmanimData.Zman?.Night72fix,
-            Tzais72: zmanimData.Zman?.Night72,
-            ShachrisGRA: zmanimData.Zman?.ShemaGra,
-            ShachrisMGA: zmanimData.Zman?.ShemaMA72,
-            TfilaGRA: zmanimData.Zman?.ShachrisGra,
-            TfilaMGA: zmanimData.Zman?.ShachrisMA72,
-            Chatzos: zmanimData.Zman?.Midday,
-            MinchaGedola: zmanimData.Zman?.MinchaGra,
-            MinchaKetana: zmanimData.Zman?.KetanaGra,
-            PlagHamincha: zmanimData.Zman?.PlagGra,
-            DawnAstronomical: zmanimData.Zman?.Dawn90
+            CandleLighting: localZmanimData.Zman?.Candles || localZmanimData.Zman?.Candles18,
+            ShabbosEnds: localZmanimData.Zman?.NightShabbos,
+            Sunrise: localZmanimData.Zman?.SunriseDefault,
+            Sunset: localZmanimData.Zman?.SunsetDefault,
+            Tzais: localZmanimData.Zman?.Night72fix,
+            Tzais72: localZmanimData.Zman?.Night72,
+            ShachrisGRA: localZmanimData.Zman?.ShemaGra,
+            ShachrisMGA: localZmanimData.Zman?.ShemaMA72,
+            TfilaGRA: localZmanimData.Zman?.ShachrisGra,
+            TfilaMGA: localZmanimData.Zman?.ShachrisMA72,
+            Chatzos: localZmanimData.Zman?.Midday,
+            MinchaGedola: localZmanimData.Zman?.MinchaGra,
+            MinchaKetana: localZmanimData.Zman?.KetanaGra,
+            PlagHamincha: localZmanimData.Zman?.PlagGra,
+            DawnAstronomical: localZmanimData.Zman?.Dawn90
         }
     })
 }
